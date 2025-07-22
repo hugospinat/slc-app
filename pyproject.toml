@@ -1,0 +1,17 @@
+[tool.black]
+line-length = 120
+target-version = ['py38']
+include = '\.pyi?$'
+extend-exclude = '''
+# A regex preceded by a single or double forward slash will be interpreted as a regular expression
+(
+  /(
+      \.eggs
+    | \.git
+    | \.venv
+    | _build
+    | build
+    | dist
+  )/
+)
+'''

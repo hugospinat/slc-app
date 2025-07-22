@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Environnement virtuel
+env/
+.venv/
+venv/
+ENV/
+
+# Base de données
+charge_control.db
+*.db
+*.sqlite
+*.sqlite3
+
+# Fichiers temporaires
+uploads/
+temp/
+*.tmp
+*.log
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+*.bak
+
+# Environnement
+.env
+.env.local
+.env.production
+
+# Streamlit
+.streamlit/secrets.toml
