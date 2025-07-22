@@ -39,7 +39,7 @@ def main():
             return
 
         # Sélection de l'année
-        annee = st.sidebar.selectbox("Année", options=annees_disponibles, key="sidebar_annee")
+        annee = st.sidebar.selectbox("Année de contrôle", options=annees_disponibles, key="annee_selectbox")
         st.session_state.selected_annee = annee
 
         # Récupérer les groupes pour l'année sélectionnée avec jointure correcte
@@ -53,7 +53,9 @@ def main():
 
         # Sélection du groupe
         groupe_options = {f"{g.nom} ({g.identifiant})": g.id for g in groupes_annee}
-        selected_groupe = st.sidebar.selectbox("Groupe", options=list(groupe_options.keys()), key="sidebar_groupe")
+        selected_groupe = st.sidebar.selectbox(
+            "Groupe à contrôler", options=list(groupe_options.keys()), key="groupe_selectbox"
+        )
         groupe_id = groupe_options[selected_groupe]
         st.session_state.selected_groupe_id = groupe_id
 
@@ -89,70 +91,80 @@ def main():
             st.info("Aucun poste trouvé pour ce contrôle.")
             return
 
-        col1, col2 = st.columns(2)
-
-        with col1:
-            poste_options = {f"{poste.code} - {poste.nom}": poste.id for poste in postes}
-            poste_options["Tout"] = None  # Ajouter l'option "Tout"
-
-            # Garder l'ancien poste_id pour détecter le changement
-            ancien_poste_id = st.session_state.get("current_poste_id")
-
-            selected_poste_name = st.selectbox("Sélectionner un poste", options=["Tout"] + list(poste_options.keys()))
-            poste_id = poste_options[selected_poste_name]
-
-            # Si le poste a changé, réinitialiser la sélection du PDF
-            if ancien_poste_id != poste_id:
-                st.session_state.selected_facture_id = None
-                st.session_state.current_poste_id = poste_id
-
-        with col2:
-            statut_filter = st.selectbox("Filtrer par statut", ["Tous", "en_attente", "validee", "contestee"])
-
-        if poste_id is None:  # Option "Tout" sélectionnée
-            # Récupérer toutes les factures pour ce contrôle
-            factures = []
-            for poste in postes:
-                factures.extend(session.exec(select(Facture).where(Facture.poste_id == poste.id)).all())
-            poste_actuel = None
-        else:
-            poste_actuel = session.get(Poste, poste_id)
-            factures = session.exec(select(Facture).where(Facture.poste_id == poste_id)).all()
-
-        if not factures:
-            st.info("Aucune facture trouvée.")
-            st.stop()
-
-        # Filtrage par statut
-        if statut_filter != "Tous":
-            factures_filtered = [f for f in factures if f.statut == statut_filter]
-        else:
-            factures_filtered = factures
-
-        factures_data = []
-        for f in factures_filtered:
-            factures_data.append(
-                {
-                    "ID": f.id,
-                    "Numéro": f.numero_facture,
-                    "Montant": f.montant_comptable,
-                    "Journal": f.code_journal,
-                    "Compte": f.numero_compte_comptable,
-                    "Libellé": f.libelle_ecriture,
-                    "Référence": f.references_partenaire_facture,
-                    "Statut": f.statut,
-                    "Commentaire": f.commentaire_contestation or "",
-                }
-            )
-
-        # Initialiser la sélection si nécessaire
-        if "selected_facture_id" not in st.session_state:
-            st.session_state.selected_facture_id = None
-
         # Diviser l'écran en deux colonnes principales
         col_table, col_pdf = st.columns([1, 1])  # Ratio 1:1
 
         with col_table:
+            col1, col2 = st.columns(2)
+
+            with col1:
+                poste_options = {f"{poste.code} - {poste.nom}": poste.id for poste in postes}
+                poste_options["Tout"] = None  # Ajouter l'option "Tout"
+
+                # Garder l'ancien poste_id pour détecter le changement
+                ancien_poste_id = st.session_state.get("current_poste_id")
+
+                selected_poste_name = st.selectbox(
+                    "Sélectionner un poste",
+                    options=["Tout"] + list(poste_options.keys()),
+                    key="poste_selectbox",
+                    label_visibility="collapsed",
+                )
+                poste_id = poste_options[selected_poste_name]
+
+                # Si le poste a changé, réinitialiser la sélection du PDF
+                if ancien_poste_id != poste_id:
+                    st.session_state.selected_facture_id = None
+                    st.session_state.current_poste_id = poste_id
+
+            with col2:
+                statut_filter = st.selectbox(
+                    "Filtrer par statut",
+                    options=["Tous", "en_attente", "validee", "contestee"],
+                    key="statut_selectbox",
+                    label_visibility="collapsed",
+                )
+
+            if poste_id is None:  # Option "Tout" sélectionnée
+                # Récupérer toutes les factures pour ce contrôle
+                factures = []
+                for poste in postes:
+                    factures.extend(session.exec(select(Facture).where(Facture.poste_id == poste.id)).all())
+                poste_actuel = None
+            else:
+                poste_actuel = session.get(Poste, poste_id)
+                factures = session.exec(select(Facture).where(Facture.poste_id == poste_id)).all()
+
+            if not factures:
+                st.info("Aucune facture trouvée.")
+                st.stop()
+
+            # Filtrage par statut
+            if statut_filter != "Tous":
+                factures_filtered = [f for f in factures if f.statut == statut_filter]
+            else:
+                factures_filtered = factures
+
+            factures_data = []
+            for f in factures_filtered:
+                factures_data.append(
+                    {
+                        "ID": f.id,
+                        "Numéro": f.numero_facture,
+                        "Montant": f.montant_comptable,
+                        "Journal": f.code_journal,
+                        "Compte": f.numero_compte_comptable,
+                        "Libellé": f.libelle_ecriture,
+                        "Référence": f.references_partenaire_facture,
+                        "Statut": f.statut,
+                        "Commentaire": f.commentaire_contestation or "",
+                    }
+                )
+
+            # Initialiser la sélection si nécessaire
+            if "selected_facture_id" not in st.session_state:
+                st.session_state.selected_facture_id = None
+
             if factures_data:
                 df_factures = pd.DataFrame(factures_data)
                 selected_rows = st.data_editor(
@@ -207,14 +219,7 @@ def main():
                 if factures_avec_pdf:  # Si des PDFs existent
                     factures_menu = {f"Facture {f['Numéro']} - {f['Montant']:.2f}€": f["ID"] for f in factures_avec_pdf}
 
-                    # Affichage du PDF
-                    if st.session_state.selected_facture_id:
-                        facture = session.get(Facture, st.session_state.selected_facture_id)
-                        if facture and facture.pdf_facture_contenu:
-                            afficher_pdf(facture.pdf_facture_contenu)
-
-                    # Navigation
-                    st.markdown("### Navigation")
+                    # Navigation en haut
                     col_nav1, col_nav2, col_nav3 = st.columns([1, 2, 1])
 
                     with col_nav1:
@@ -253,6 +258,12 @@ def main():
                                     st.session_state.selected_facture_id = list(factures_menu.values())[
                                         current_index + 1
                                     ]
+
+                    # Affichage du PDF en dessous de la navigation
+                    if st.session_state.selected_facture_id:
+                        facture = session.get(Facture, st.session_state.selected_facture_id)
+                        if facture and facture.pdf_facture_contenu:
+                            afficher_pdf(facture.pdf_facture_contenu)
                 else:
                     st.warning("Aucune facture avec PDF disponible pour ce poste")
 
@@ -316,5 +327,7 @@ def main():
             st.warning("Aucun poste sélectionné ou le poste n'existe pas.")
 
 
+if __name__ == "__main__":
+    main()
 if __name__ == "__main__":
     main()
