@@ -55,6 +55,18 @@ class ZipProcessor(BaseProcessor):
         self.log_info(f"Fichiers GED001 trouvés: {len(pdf_files)}")
         return pdf_files
 
+    def find_reg114_pdfs(self, directory: str) -> List[str]:
+        """Trouver tous les fichiers PDF contenant 'REG114' dans le nom"""
+        pdf_files = []
+
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                if file.lower().endswith(".pdf") and "REG114" in file:
+                    pdf_files.append(os.path.join(root, file))
+
+        self.log_info(f"Fichiers REG114 trouvés: {len(pdf_files)}")
+        return pdf_files
+
     def cleanup_directory(self, directory: str):
         """Nettoyer un répertoire temporaire"""
         if directory and os.path.exists(directory):

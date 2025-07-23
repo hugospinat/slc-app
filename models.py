@@ -47,6 +47,7 @@ class ControleCharges(SQLModel, table=True):
     # Relations
     groupe: Groupe = Relationship(back_populates="controles")
     postes: List["Poste"] = Relationship(back_populates="controle")
+    bases_repartition: List["BaseRepartition"] = Relationship(back_populates="controle")
 
 
 class RegleExtractionChamp(SQLModel, table=True):
@@ -116,6 +117,40 @@ class FactureElectricite(SQLModel, table=True):
 
     # Relations
     facture: "Facture" = Relationship(back_populates="details_electricite")
+
+
+class Tantieme(SQLModel, table=True):
+    """Table des tantièmes pour la répartition des charges"""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    base_repartition_id: int = Field(foreign_key="baserepartition.id")
+    numero_ug: str  # Numéro UG
+    numero_ca: str  # Numéro CA
+    debut_occupation: Optional[datetime] = None  # Début occupation
+    fin_occupation: Optional[datetime] = None  # Fin Occupation
+    tantieme: Optional[float] = None  # Tantième
+    reliquat: Optional[float] = None  # Reliquat
+    fichier_source: str  # Fichier source REG114
+    ligne_pdf: int  # Ligne dans le PDF
+
+    # Relations
+    base_repartition: "BaseRepartition" = Relationship(back_populates="tantiemes")
+
+
+class BaseRepartition(SQLModel, table=True):
+    """Base de répartition des charges (ex: SRC - Base de répart. Charges)"""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    controle_id: int = Field(foreign_key="controlecharges.id")
+    code: str  # Code de la base (ex: SRC, SGA, SAS)
+    nom: str  # Nom de la base (ex: Base de répart. Charges)
+    cdc_concerne: Optional[str] = None  # Code de charges concerné
+    fichier_source: str  # Fichier source REG114
+    ligne_pdf: int  # Ligne dans le PDF
+
+    # Relations
+    controle: "ControleCharges" = Relationship(back_populates="bases_repartition")
+    tantiemes: List["Tantieme"] = Relationship(back_populates="base_repartition")
 
 
 # Configuration de la base de données

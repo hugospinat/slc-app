@@ -2,6 +2,17 @@
 
 ## Prochaines fonctionnalités
 
+### ✅ 0. REG114 - Tantièmes
+
+**TERMINÉ**
+
+- [x] Créer `reg114_processor.py` dans `/processors/`
+- [x] Ajouter `find_reg114_pdfs()` dans ZipProcessor
+- [x] Intégrer dans FileProcessor avec sauvegarde CSV
+- [x] Traitement automatique lors de l'import ZIP
+
+**Durée réalisée : 1h**
+
 ### 1. REG013A
 
 _Format de données comptables supplémentaire_
