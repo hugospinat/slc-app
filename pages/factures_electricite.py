@@ -4,10 +4,18 @@ import pandas as pd
 import streamlit as st
 from sqlmodel import Session, select
 
-from models import ControleCharges, Facture, FactureElectricite, Groupe, clear_registry, engine
 
-# Nettoyer les métadonnées avant l'import des modèles
-clear_registry()
+# Utiliser le cache Streamlit pour éviter les reimports multiples
+@st.cache_resource
+def import_models():
+    """Import des modèles avec cache pour éviter les redéfinitions SQLAlchemy"""
+    from models import ControleCharges, Facture, FactureElectricite, Groupe, engine
+
+    return ControleCharges, Facture, FactureElectricite, Groupe, engine
+
+
+# Import avec cache
+ControleCharges, Facture, FactureElectricite, Groupe, engine = import_models()
 
 
 def main():

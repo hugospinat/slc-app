@@ -4,12 +4,21 @@ import pandas as pd
 import streamlit as st
 from sqlmodel import Session, select
 
-from models import ControleCharges, Facture, Groupe, Poste, clear_registry, engine
 from utils.factures import update_facture_commentaire, update_facture_statut
 from utils.postes import update_rapport_poste
 
-# Nettoyer les métadonnées avant l'import des modèles
-clear_registry()
+
+# Utiliser le cache Streamlit pour éviter les reimports multiples
+@st.cache_resource
+def import_models():
+    """Import des modèles avec cache pour éviter les redéfinitions SQLAlchemy"""
+    from models import ControleCharges, Facture, Groupe, Poste, engine
+
+    return ControleCharges, Facture, Groupe, Poste, engine
+
+
+# Import avec cache
+ControleCharges, Facture, Groupe, Poste, engine = import_models()
 
 
 def afficher_pdf(pdf_bytes):

@@ -1,54 +1,48 @@
 import re
-from typing import List
+from typing import Any, List
 
 import pandas as pd
 import streamlit as st
 from sqlmodel import Session, select
 
-from models import (
-    ControleCharges,
-    Facture,
-    Fournisseur,
-    Groupe,
-    RegleExtractionChamp,
-    TypeFacture,
-    clear_registry,
-    engine,
-)
 
-# Nettoyer les métadonnées avant l'import des modèles
-clear_registry()
+# Utiliser le cache Streamlit pour éviter les reimports multiples
+@st.cache_resource
+def import_models():
+    """Import des modèles avec cache pour éviter les redéfinitions SQLAlchemy"""
+    from models import ControleCharges, Facture, Fournisseur, Groupe, RegleExtractionChamp, TypeFacture, engine
+
+    return ControleCharges, Facture, Fournisseur, Groupe, RegleExtractionChamp, TypeFacture, engine
 
 
-def tester_regex(factures: List[Facture], champ: str, regex: str) -> pd.DataFrame:
+# Import avec cache
+ControleCharges, Facture, Fournisseur, Groupe, RegleExtractionChamp, TypeFacture, engine = import_models()
+
+
+def creer_dataframe_factures(factures: List[Any]) -> pd.DataFrame:
+    """Crée un DataFrame à partir d'une liste de factures"""
+    return pd.DataFrame(
+        [
+            {
+                "Numéro": f.numero_facture,
+                "Montant": f.montant_comptable,
+                "Libellé": f.libelle_ecriture,
+                "Référence": f.references_partenaire_facture,
+            }
+            for f in factures
+        ]
+    )
+
+
+def tester_regex(factures: List[Any], champ: str, regex: str) -> pd.DataFrame:
     """Teste un regex sur une liste de factures"""
     if not regex:  # Si regex vide, retourner toutes les factures
-        return pd.DataFrame(
-            [
-                {
-                    "Numéro": f.numero_facture,
-                    "Montant": f.montant_comptable,
-                    "Libellé": f.libelle_ecriture,
-                    "Référence": f.references_partenaire_facture,
-                }
-                for f in factures
-            ]
-        )
+        return creer_dataframe_factures(factures)
 
     try:
         pattern = re.compile(regex)
-        factures_filtrees = [f for f in factures if pattern.search(getattr(f, champ))]
-        return pd.DataFrame(
-            [
-                {
-                    "Numéro": f.numero_facture,
-                    "Montant": f.montant_comptable,
-                    "Libellé": f.libelle_ecriture,
-                    "Référence": f.references_partenaire_facture,
-                }
-                for f in factures_filtrees
-            ]
-        )
+        factures_filtrees = [f for f in factures if pattern.search(getattr(f, champ, "") or "")]
+        return creer_dataframe_factures(factures_filtrees)
     except re.error as e:
         st.error(f"Erreur dans l'expression régulière : {str(e)}")
         return pd.DataFrame()
@@ -68,10 +62,8 @@ def main():
                 nouveau_type = st.selectbox("Type de facture", options=[t.value for t in TypeFacture])
 
             with col2:
-                champ_detection = st.selectbox(
-                    "Champ de détection",
-                    options=["libelle_ecriture", "references_partenaire_facture", "numero_facture"],
-                )
+                champs_detection = ["libelle_ecriture", "references_partenaire_facture", "numero_facture"]
+                champ_detection = st.selectbox("Champ de détection", options=champs_detection)
                 regex_detection = st.text_input("Expression régulière de détection")
 
             if st.button("Enregistrer le fournisseur"):
@@ -88,92 +80,9 @@ def main():
                         session.add(fournisseur)
                         session.commit()
                         st.success("✅ Fournisseur enregistré")
+                        st.rerun()
                     except Exception as e:
                         st.error(f"Erreur lors de l'enregistrement : {str(e)}")
-
-    # Section Gestion des règles d'extraction
-    st.subheader("Règles d'extraction automatique")
-
-    with Session(engine) as session:
-        fournisseurs = session.exec(select(Fournisseur)).all()
-
-        if fournisseurs:
-            fournisseur_noms = [f.nom for f in fournisseurs]
-            fournisseur_selected = st.selectbox(
-                "Fournisseur pour les règles", options=fournisseur_noms, key="regle_fournisseur"
-            )
-            fournisseur_obj = next(f for f in fournisseurs if f.nom == fournisseur_selected)
-
-            with st.expander("Ajouter une règle d'extraction", expanded=False):
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    table_cible = st.selectbox("Table cible", options=[t.value for t in TypeFacture], key="regle_table")
-                    champ_cible = st.text_input(
-                        "Champ cible", placeholder="ex: index_debut, date_debut", key="regle_champ"
-                    )
-
-                with col2:
-                    regex_extraction = st.text_input(
-                        "Regex d'extraction", placeholder="ex: Index début:\\s*(\\d+)", key="regle_regex"
-                    )
-                    description = st.text_input(
-                        "Description (optionnel)", placeholder="ex: Extrait l'index de début", key="regle_description"
-                    )
-
-                if st.button("Enregistrer la règle", key="save_regle"):
-                    if not champ_cible or not regex_extraction:
-                        st.error("Le champ cible et la regex sont obligatoires")
-                    else:
-                        try:
-                            if fournisseur_obj.id is not None:
-                                regle = RegleExtractionChamp(
-                                    fournisseur_id=fournisseur_obj.id,
-                                    table_cible=TypeFacture(table_cible),
-                                    champ_cible=champ_cible,
-                                    regex_extraction=regex_extraction,
-                                    description=description,
-                                    actif=True,
-                                )
-                                session.add(regle)
-                                session.commit()
-                                st.success("✅ Règle d'extraction enregistrée")
-                            else:
-                                st.error("ID du fournisseur non valide")
-                        except Exception as e:
-                            st.error(f"Erreur lors de l'enregistrement : {str(e)}")
-
-            # Afficher les règles existantes
-            regles = session.exec(
-                select(RegleExtractionChamp).where(RegleExtractionChamp.fournisseur_id == fournisseur_obj.id)
-            ).all()
-
-            if regles:
-                st.write("**Règles existantes :**")
-                for regle in regles:
-                    with st.expander(
-                        f"{regle.table_cible.value}.{regle.champ_cible} - {'✅' if regle.actif else '❌'}"
-                    ):
-                        col1, col2, col3 = st.columns([2, 1, 1])
-
-                        with col1:
-                            st.code(regle.regex_extraction)
-                            if regle.description:
-                                st.caption(regle.description)
-
-                        with col2:
-                            nouveau_statut = st.checkbox("Actif", value=regle.actif, key=f"actif_{regle.id}")
-                            if nouveau_statut != regle.actif:
-                                regle.actif = nouveau_statut
-                                session.add(regle)
-                                session.commit()
-                                st.rerun()
-
-                        with col3:
-                            if st.button("Supprimer", key=f"delete_{regle.id}"):
-                                session.delete(regle)
-                                session.commit()
-                                st.rerun()
 
     # Section Test Regex
     st.subheader("Test de détection")
@@ -183,10 +92,16 @@ def main():
         col1, col2 = st.columns(2)
         with col1:
             annees = session.exec(select(ControleCharges.annee).distinct()).all()
+            if not annees:
+                st.warning("Aucune année de contrôle disponible")
+                return
             annee = st.selectbox("Année", options=sorted(annees, reverse=True))
 
         with col2:
             groupes = session.exec(select(Groupe).join(ControleCharges).where(ControleCharges.annee == annee)).all()
+            if not groupes:
+                st.warning("Aucun groupe disponible pour cette année")
+                return
             groupe_dict = {f"{g.nom} ({g.identifiant})": g.id for g in groupes}
             groupe_id = st.selectbox("Groupe", options=list(groupe_dict.keys()))
 
@@ -197,47 +112,56 @@ def main():
             )
         ).first()
 
-        if controle:
-            factures = []
-            for poste in controle.postes:
-                factures.extend(poste.factures)
+        if not controle:
+            st.warning("Aucun contrôle trouvé")
+            return
 
-            # Interface de test regex
-            fournisseurs = session.exec(select(Fournisseur)).all()
-            fournisseur = st.selectbox("Fournisseur à tester", options=[f.nom for f in fournisseurs])
+        factures = []
+        for poste in controle.postes:
+            factures.extend(poste.factures)
 
-            if fournisseur:
-                f = next(f for f in fournisseurs if f.nom == fournisseur)
-                champ = st.selectbox(
-                    "Champ à tester",
-                    options=["libelle_ecriture", "references_partenaire_facture", "numero_facture"],
-                    key="test_champ",
-                    index=["libelle_ecriture", "references_partenaire_facture", "numero_facture"].index(
-                        f.champ_detection
-                    ),
-                )
-                regex = st.text_input("Regex à tester", value=f.regex_detection or "")
+        if not factures:
+            st.info("Aucune facture trouvée pour ce contrôle")
+            return
 
-                col1, col2 = st.columns(2)
+        # Interface de test regex
+        fournisseurs = session.exec(select(Fournisseur)).all()
+        if not fournisseurs:
+            st.warning("Aucun fournisseur configuré")
+            return
 
-                with col1:
-                    if st.button("Tester le regex"):
-                        df = tester_regex(factures, champ, regex)
-                        if not df.empty:
-                            st.dataframe(df, use_container_width=True)
-                        else:
-                            st.info("Aucune facture ne correspond au regex")
+        fournisseur_nom = st.selectbox("Fournisseur à tester", options=[f.nom for f in fournisseurs])
+        fournisseur_obj = next(f for f in fournisseurs if f.nom == fournisseur_nom)
 
-                with col2:
-                    if st.button("Enregistrer la configuration"):
-                        try:
-                            f.champ_detection = champ
-                            f.regex_detection = regex
-                            session.add(f)
-                            session.commit()
-                            st.success("✅ Configuration enregistrée")
-                        except Exception as e:
-                            st.error(f"Erreur lors de l'enregistrement : {str(e)}")
+        champs_detection = ["libelle_ecriture", "references_partenaire_facture", "numero_facture"]
+        champ_index = 0
+        if fournisseur_obj.champ_detection in champs_detection:
+            champ_index = champs_detection.index(fournisseur_obj.champ_detection)
+
+        champ = st.selectbox("Champ à tester", options=champs_detection, index=champ_index)
+        regex = st.text_input("Regex à tester", value=fournisseur_obj.regex_detection or "")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("Tester le regex"):
+                df = tester_regex(factures, champ, regex)
+                if not df.empty:
+                    st.dataframe(df, use_container_width=True)
+                    st.info(f"{len(df)} facture(s) trouvée(s)")
+                else:
+                    st.info("Aucune facture ne correspond au regex")
+
+        with col2:
+            if st.button("Enregistrer la configuration"):
+                try:
+                    fournisseur_obj.champ_detection = champ
+                    fournisseur_obj.regex_detection = regex
+                    session.add(fournisseur_obj)
+                    session.commit()
+                    st.success("✅ Configuration enregistrée")
+                except Exception as e:
+                    st.error(f"Erreur lors de l'enregistrement : {str(e)}")
 
 
 if __name__ == "__main__":

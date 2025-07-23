@@ -6,12 +6,21 @@ import pandas as pd
 import streamlit as st
 from sqlmodel import Session, select
 
-from models import Groupe, clear_registry, engine
 from processors import FileProcessor
 from utils.database import save_to_database
 
-# Nettoyer les métadonnées avant l'import des modèles
-clear_registry()
+
+# Utiliser le cache Streamlit pour éviter les reimports multiples
+@st.cache_resource
+def import_models():
+    """Import des modèles avec cache pour éviter les redéfinitions SQLAlchemy"""
+    from models import Groupe, engine
+
+    return Groupe, engine
+
+
+# Import avec cache
+Groupe, engine = import_models()
 
 
 def main():
