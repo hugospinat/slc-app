@@ -2,7 +2,10 @@ import pandas as pd
 import streamlit as st
 from sqlmodel import Session, select
 
-from models import Groupe, engine
+from models import Groupe, clear_registry, engine
+
+# Nettoyer les métadonnées avant l'import des modèles
+clear_registry()
 
 
 def main():

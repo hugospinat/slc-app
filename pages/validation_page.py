@@ -2,14 +2,14 @@ import base64
 
 import pandas as pd
 import streamlit as st
-from sqlmodel import Session, SQLModel, select
+from sqlmodel import Session, select
 
-from models import ControleCharges, Facture, Groupe, Poste, engine
+from models import ControleCharges, Facture, Groupe, Poste, clear_registry, engine
 from utils.factures import update_facture_commentaire, update_facture_statut
 from utils.postes import update_rapport_poste
 
 # Nettoyer les métadonnées avant l'import des modèles
-SQLModel.metadata.clear()
+clear_registry()
 
 
 def afficher_pdf(pdf_bytes):
@@ -156,6 +156,7 @@ def main():
                         "Compte": f.numero_compte_comptable,
                         "Libellé": f.libelle_ecriture,
                         "Référence": f.references_partenaire_facture,
+                        "Fournisseur": f.fournisseur.nom if f.fournisseur else "Non détecté",
                         "Statut": f.statut,
                         "Commentaire": f.commentaire_contestation or "",
                     }
@@ -179,12 +180,13 @@ def main():
                         "Compte": st.column_config.TextColumn("Compte", disabled=True),
                         "Libellé": st.column_config.TextColumn("Libellé", disabled=True),
                         "Référence": st.column_config.TextColumn("Référence", disabled=True),
+                        "Fournisseur": st.column_config.TextColumn("Fournisseur", disabled=True, width="medium"),
                         "Statut": st.column_config.SelectboxColumn(
                             "Statut", options=["en_attente", "validee", "contestee"], required=True, width="small"
                         ),
                         "Commentaire": st.column_config.TextColumn("Commentaire", disabled=False, width="large"),
                     },
-                    column_order=["Numéro", "Montant", "Journal", "Libellé", "Statut", "Commentaire"],
+                    column_order=["Numéro", "Montant", "Journal", "Libellé", "Fournisseur", "Statut", "Commentaire"],
                     hide_index=True,
                     use_container_width=True,
                     height=800,
@@ -327,7 +329,5 @@ def main():
             st.warning("Aucun poste sélectionné ou le poste n'existe pas.")
 
 
-if __name__ == "__main__":
-    main()
 if __name__ == "__main__":
     main()

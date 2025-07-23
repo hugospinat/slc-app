@@ -1,8 +1,12 @@
+import logging
 from datetime import datetime
 
 from sqlmodel import Session
 
 from models import Facture, engine
+from utils import logging_config  # noqa: F401
+
+logger = logging.getLogger(__name__)
 
 
 def update_facture_statut(facture_id: int, nouveau_statut: str):
@@ -16,7 +20,7 @@ def update_facture_statut(facture_id: int, nouveau_statut: str):
                 session.add(facture)
                 session.commit()
     except Exception as e:
-        print(f"❌ Erreur lors de la mise à jour du statut: {e}")
+        logger.error(f"Erreur lors de la mise à jour du statut: {e}")
 
 
 def update_facture_commentaire(facture_id: int, nouveau_commentaire: str):
@@ -30,4 +34,4 @@ def update_facture_commentaire(facture_id: int, nouveau_commentaire: str):
                 session.add(facture)
                 session.commit()
     except Exception as e:
-        print(f"❌ Erreur lors de la mise à jour du commentaire: {e}")
+        logger.error(f"Erreur lors de la mise à jour du commentaire: {e}")

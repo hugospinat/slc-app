@@ -1,24 +1,29 @@
+import logging
+
 import streamlit as st
 from sqlmodel import Session, select
 
 from models import Groupe, create_db_and_tables
+from utils import logging_config  # noqa: F401
 from utils.database import engine
+
+logger = logging.getLogger(__name__)
 
 
 def init_database():
     """Initialiser la base de données"""
     try:
-        print("🔧 Initialisation de la base de données...")
+        logger.info("🔧 Initialisation de la base de données...")
         create_db_and_tables()
-        print("✅ Base de données initialisée avec succès")
+        logger.info("✅ Base de données initialisée avec succès")
 
         # Vérifier la connexion
         with Session(engine) as session:
             groupes_count = len(session.exec(select(Groupe)).all())
-            print(f"📊 Groupes existants: {groupes_count}")
+            logger.info(f"📊 Groupes existants: {groupes_count}")
 
     except Exception as e:
-        print(f"❌ Erreur lors de l'initialisation de la base: {e}")
+        logger.error(f"❌ Erreur lors de l'initialisation de la base: {e}")
         import traceback
 
         traceback.print_exc()

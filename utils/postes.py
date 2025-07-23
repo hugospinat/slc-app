@@ -1,6 +1,11 @@
+import logging
+
 from sqlmodel import Session
 
 from models import Poste, engine
+from utils import logging_config  # noqa: F401
+
+logger = logging.getLogger(__name__)
 
 
 def update_rapport_poste(poste_id: int, nouveau_rapport: str):
@@ -13,4 +18,4 @@ def update_rapport_poste(poste_id: int, nouveau_rapport: str):
                 session.add(poste)
                 session.commit()
     except Exception as e:
-        print(f"❌ Erreur lors de la mise à jour du rapport: {e}")
+        logger.error(f"❌ Erreur lors de la mise à jour du rapport: {e}")

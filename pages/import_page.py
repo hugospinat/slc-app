@@ -6,9 +6,12 @@ import pandas as pd
 import streamlit as st
 from sqlmodel import Session, select
 
-from file_processor import FileProcessor
-from models import Groupe, engine
+from models import Groupe, clear_registry, engine
+from processors import FileProcessor
 from utils.database import save_to_database
+
+# Nettoyer les métadonnées avant l'import des modèles
+clear_registry()
 
 
 def main():
