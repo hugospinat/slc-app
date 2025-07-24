@@ -1,9 +1,9 @@
 import os
-import re
-from typing import List
+from typing import Dict, List
 
 import pandas as pd
 import tabula.io as tabula
+from sqlmodel import select
 
 from .base_processor import BaseProcessor
 
@@ -14,7 +14,7 @@ class Reg114Processor(BaseProcessor):
     def __init__(self):
         super().__init__()
 
-    def extract_data_from_pdf(self, pdf_path: str) -> pd.DataFrame:
+    def extract_data_from_pdf(self, pdf_path: str) -> Dict[str, pd.DataFrame]:
         """Extraire les données d'un PDF REG114 de manière robuste"""
         try:
             self.log_info(f"Traitement du fichier REG114: {pdf_path}")
@@ -30,7 +30,7 @@ class Reg114Processor(BaseProcessor):
 
             if not dfs:
                 self.log_warning(f"Aucun tableau trouvé dans {pdf_path}")
-                return pd.DataFrame()
+                return {}
 
             # Combiner tous les DataFrames
             combined_df = pd.concat(dfs, ignore_index=True)
@@ -38,40 +38,70 @@ class Reg114Processor(BaseProcessor):
 
             if combined_df.empty or combined_df.shape[1] < 6:
                 self.log_error(f"Format incorrect: {combined_df.shape[1]} colonnes (minimum 6 requis pour REG114)")
-                return pd.DataFrame()
+                return {}
 
             # Nettoyer et structurer les données
-            return self._process_extracted_data(combined_df, pdf_path)
+            return self._process_extracted_data(combined_df)
 
         except Exception as e:
             self.log_error(f"Erreur dans {pdf_path}: {str(e)}")
             import traceback
 
             traceback.print_exc()
-            return pd.DataFrame()
+            return {}
 
-    def _process_extracted_data(self, df: pd.DataFrame, pdf_path: str) -> pd.DataFrame:
+    def _process_extracted_data(self, df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         """Traiter et nettoyer les données extraites du REG114 avec détection des bases de répartition"""
+        # Nommer les colonnes selon le modèle de données REG114
+        colonnes_reg114 = [
+            "code_base",  # Colonne 0: code de base actuel (propagé)
+            "numero_ug",  # Colonne 1: numéros UG
+            "numero_ca",  # Colonne 2: numéro compte auxiliaire
+            "debut_occupation",  # Colonne 3: date début occupation
+            "fin_occupation",  # Colonne 4: date fin occupation
+            "tantieme",  # Colonne 5: montant tantième
+            "reliquat",  # Colonne 6: montant reliquat
+        ]
+        colonnes_bases = ["code_base", "nom_base"]
         try:
-            # Ajouter les métadonnées de base
-            df["fichier_source"] = os.path.basename(pdf_path)
-            df["ligne_pdf"] = range(1, len(df) + 1)
-
             # Supprimer les lignes complètement vides
             df = df.dropna(how="all")
             self.log_info(f"📊 Après suppression des lignes vides: {len(df)}")
 
-            # NOUVEAU : Supprimer les lignes avec 7 colonnes ou plus non vides (doublons théoriques)
+            # Supprimer les lignes avec 7 colonnes ou plus non vides (doublons théoriques)
             df_filtre = self._filtrer_par_nombre_colonnes(df)
 
-            # Détecter et traiter les bases de répartition
-            df_with_bases = self._detect_and_group_by_bases(df_filtre)
+            # Pattern pour détecter les codes de base de répartition
+            pattern_base = r"([A-Z][A-Z0-9]+) - (.*)"
 
-            return df_with_bases
+            # Extraire les codes de base (garde seulement le code, pas le nom)
+            base_extraites = df_filtre.iloc[:, 0].astype(str).str.extract(pattern_base, expand=True)
+
+            # Propager le code vers le bas (forward fill) jusqu'à la prochaine base
+            codes_base_propages = base_extraites.iloc[0].ffill()
+
+            # Ajouter la colonne au DataFrame
+            df_avec_code = df.copy()
+            df_avec_code.insert(0, "code_base_actuel", codes_base_propages)
+
+            df_avec_code.columns = colonnes_reg114
+
+            # Appliquer le regex pour valider les tantièmes
+            tantieme_pattern = r"^-?\d+\.\d{1,2}$"
+            df_avec_code = df_avec_code[df_avec_code.iloc[:, 5].astype(str).str.match(tantieme_pattern)]
+
+            # Récuperer les bases uniques extraites
+            unique_bases_extraites = base_extraites.dropna().drop_duplicates().reset_index(drop=True)
+            bases_repartition = pd.DataFrame(unique_bases_extraites, columns=colonnes_bases)
+
+            self.log_info(f"📋 Codes de base propagés sur {len(df_avec_code)} lignes")
+            self.log_info(f"📊 {len(bases_repartition)} bases de répartition identifiées")
+
+            return {"df_avec_code": df_avec_code, "bases_repartition": bases_repartition}
 
         except Exception as e:
             self.log_error(f"Erreur lors du traitement des données: {str(e)}")
-            return pd.DataFrame()
+            return {}
 
     def _filtrer_par_nombre_colonnes(self, df: pd.DataFrame) -> pd.DataFrame:
         """Supprimer les lignes ayant 7 colonnes ou plus non vides (section écarts théoriques)"""
@@ -97,238 +127,102 @@ class Reg114Processor(BaseProcessor):
 
         return df[mask_a_garder].copy()
 
-    def _detect_and_group_by_bases(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Détecter les lignes de base de répartition et grouper les tantièmes"""
-
-        try:
-            base_repartition_rows = []
-            tantieme_rows = []
-            current_base = None
-            codes_bases_vus = set()  # NOUVEAU : Tracker les codes de base déjà vus
-
-            # Regex pour détecter les bases de répartition: code commençant par une majuscule suivi de lettres/chiffres + " - "
-            base_pattern = re.compile(r"([A-Z][A-Z0-9]+) - (.+)")
-
-            for idx, row in df.iterrows():
-                # Vérifier si c'est une ligne de base de répartition
-                first_col = str(row.iloc[0]) if not pd.isna(row.iloc[0]) else ""
-
-                match = base_pattern.match(first_col.strip())
-                if match:
-                    # C'est une base de répartition
-                    code_base = match.group(1)
-                    nom_base = match.group(2).strip()
-
-                    # NOUVEAU : Vérifier si le code de base existe déjà
-                    if code_base in codes_bases_vus:
-                        self.log_info(f"🔄 Code de base dupliqué ignoré: {code_base} (ligne {row['ligne_pdf']})")
-                        # On ignore cette ligne et toutes les suivantes car on est dans la section doublons
-                        break
-
-                    # Ajouter le code à la liste des codes vus
-                    codes_bases_vus.add(code_base)
-
-                    current_base = {
-                        "code": code_base,
-                        "nom": nom_base,
-                        "cdc_concerne": None,  # À déterminer si nécessaire
-                        "fichier_source": row["fichier_source"],
-                        "ligne_pdf": row["ligne_pdf"],
-                        "type": "base_repartition",
-                    }
-
-                    base_repartition_rows.append(current_base)
-                    self.log_info(f"📋 Base de répartition détectée: {code_base} - {nom_base}")
-
-                else:
-                    # C'est une ligne de tantième
-                    if current_base is not None:
-                        # Vérifier si la ligne a suffisamment de colonnes pour être un tantième valide
-                        if self._is_valid_tantieme_row(row):
-                            tantieme_data = self._extract_tantieme_data(row, current_base)
-                            if tantieme_data:  # Vérifier que le dictionnaire n'est pas vide
-                                tantieme_rows.append(tantieme_data)
-
-            self.log_info(f"✅ {len(base_repartition_rows)} bases de répartition détectées")
-            self.log_info(f"✅ {len(tantieme_rows)} tantièmes extraits")
-
-            # Créer le DataFrame final avec les deux types de données
-            all_rows = base_repartition_rows + tantieme_rows
-            return pd.DataFrame(all_rows)
-
-        except Exception as e:
-            self.log_error(f"Erreur lors de la détection des bases: {str(e)}")
-            return df
-
-    def _is_valid_tantieme_row(self, row) -> bool:
-        """Vérifier si une ligne est un tantième valide"""
-
-        try:
-            # Au minimum : numéro UG (première colonne) non vide
-            numero_ug = str(row.iloc[0]) if not pd.isna(row.iloc[0]) else ""
-            if numero_ug.strip() == "" or " - " in numero_ug:
-                return False
-
-            return True
-        except Exception:
-            return False
-
-    def _extract_tantieme_data(self, row, current_base):
-        """Extraire les données d'un tantième avec validation du montant"""
-        try:
-            # Colonnes attendues : UG, CA, début, fin, tantième, reliquat
-            tantieme_data = {
-                "type": "tantieme",
-                "base_code": current_base["code"],
-                "base_nom": current_base["nom"],
-                "numero_ug": str(row.iloc[0]) if not pd.isna(row.iloc[0]) else "",
-                "numero_ca": str(row.iloc[1]) if len(row) > 1 and not pd.isna(row.iloc[1]) else "",
-                "debut_occupation": row.iloc[2] if len(row) > 2 else None,
-                "fin_occupation": row.iloc[3] if len(row) > 3 else None,
-                "tantieme": row.iloc[4] if len(row) > 4 else None,
-                "reliquat": row.iloc[5] if len(row) > 5 else None,
-                "fichier_source": row["fichier_source"],
-                "ligne_pdf": row["ligne_pdf"],
-            }
-
-            # Vérifier que le numéro UG n'est pas vide
-            if tantieme_data["numero_ug"].strip() == "":
-                return {}
-
-            # Appliquer le même filtre de montant que REG010 sur la colonne tantième
-            if not self._is_valid_tantieme_amount(tantieme_data["tantieme"]):
-                self.log_debug(f"Ligne tantième rejetée - Montant invalide: '{tantieme_data['tantieme']}'")
-                return {}
-
-            return tantieme_data
-
-        except Exception as e:
-            self.log_warning(f"Erreur lors de l'extraction tantième ligne {row.get('ligne_pdf', '?')}: {str(e)}")
-            return {}
-
-    def _is_valid_tantieme_amount(self, montant) -> bool:
-        """Valider le montant d'un tantième avec le même pattern que REG010"""
-        import re
-
-        if montant is None or pd.isna(montant):
-            return False
-
-        montant_str = str(montant).strip()
-        if montant_str == "" or montant_str == "nan":
-            return False
-
-        # Même pattern que REG010 : montant décimal avec 1 ou 2 chiffres après la virgule
-        montant_pattern = r"^-?\d+(\.\d{1,2})?$"
-        return bool(re.match(montant_pattern, montant_str))
-
-    def _convert_numeric_fields(self, df: pd.DataFrame):
-        """Convertir les champs numériques et dates"""
-        try:
-            # Conversion des champs numériques
-            for col in ["tantieme", "reliquat"]:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors="coerce")
-
-            # Conversion des dates (si format reconnu)
-            for col in ["debut_occupation", "fin_occupation"]:
-                if col in df.columns:
-                    df[col] = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
-
-        except Exception as e:
-            self.log_warning(f"Erreur lors de la conversion des types: {str(e)}")
-
-    def save_to_database(self, df: pd.DataFrame, controle_id: int) -> int:
+    def save_to_database(self, dfs: Dict[str, pd.DataFrame], controle_id: int) -> tuple[int, int]:
         """Sauvegarder les bases de répartition et tantièmes en base de données"""
-        if df.empty:
-            self.log_warning("DataFrame vide, rien à sauvegarder")
-            return 0
+        if not dfs:
+            self.log_warning("DataFrames vides, rien à sauvegarder")
+            return (0, 0)
+
+        df_tantiemes = dfs.get("tantiemes", pd.DataFrame())
+        df_bases = dfs.get("bases", pd.DataFrame())
 
         try:
             from sqlmodel import Session
 
             from models import BaseRepartition, Tantieme, engine
 
-            saved_count = 0
-            base_id_map = {}  # Mapping code_base -> base_id
+            compteur_bases = 0
+            compteur_tantiemes = 0
 
             with Session(engine) as session:
-                # D'abord sauvegarder les bases de répartition
-                for _, row in df.iterrows():
-                    if row.get("type") == "base_repartition":
-                        base_repartition = BaseRepartition(
-                            controle_id=controle_id,
-                            code=row["code"],
-                            nom=row["nom"],
-                            cdc_concerne=row.get("cdc_concerne"),
-                            fichier_source=row["fichier_source"],
-                            ligne_pdf=int(row["ligne_pdf"]),
-                        )
-                        session.add(base_repartition)
-                        session.flush()  # Pour obtenir l'ID
-                        base_id_map[row["code"]] = base_repartition.id
-                        saved_count += 1
 
-                # Ensuite sauvegarder les tantièmes
-                for _, row in df.iterrows():
-                    if row.get("type") == "tantieme":
-                        base_id = base_id_map.get(row["base_code"])
+                # 1. Sauvegarder les bases de répartition
+                if not df_bases.empty:
+                    self.log_info(f"💾 Sauvegarde de {len(df_bases)} bases de répartition")
+
+                    for _, ligne_base in df_bases.iterrows():
+                        nouvelle_base = BaseRepartition(
+                            controle_id=controle_id,
+                            code=str(ligne_base["code_base"]),
+                            nom=str(ligne_base["nom_base"]),
+                        )
+                        session.add(nouvelle_base)
+                        compteur_bases += 1
+
+                # Valider les bases pour récupérer les IDs
+                session.commit()
+
+                # 2. Sauvegarder les tantièmes
+                if not df_tantiemes.empty:
+                    self.log_info(f"💾 Sauvegarde de {len(df_tantiemes)} tantièmes")
+
+                    # Récupérer les bases créées pour l'association (SQLModel style)
+                    bases_creees = session.exec(
+                        select(BaseRepartition).where(BaseRepartition.controle_id == controle_id)
+                    ).all()
+
+                    # Créer un dictionnaire code -> id pour l'association
+                    mapping_bases = {base.code: base.id for base in bases_creees}
+
+                    for _, ligne_tantieme in df_tantiemes.iterrows():
+                        code_base = str(ligne_tantieme.get("code_base_actuel", ""))
+                        base_id = mapping_bases.get(code_base)
+
                         if base_id:
-                            tantieme = Tantieme(
+                            # Extraire le numéro UG depuis description_ligne
+                            nouveau_tantieme = Tantieme(
                                 base_repartition_id=base_id,
-                                numero_ug=str(row["numero_ug"]),
-                                numero_ca=str(row["numero_ca"]),
-                                debut_occupation=row.get("debut_occupation"),
-                                fin_occupation=row.get("fin_occupation"),
-                                tantieme=row.get("tantieme"),
-                                reliquat=row.get("reliquat"),
-                                fichier_source=row["fichier_source"],
-                                ligne_pdf=int(row["ligne_pdf"]),
+                                numero_ug=ligne_tantieme.get("numero_ug", 0),
+                                numero_ca=str(ligne_tantieme.get("numero_ca", "")),
+                                debut_occupation=ligne_tantieme.get("debut_occupation"),
+                                fin_occupation=ligne_tantieme.get("fin_occupation"),
+                                tantieme=float(ligne_tantieme.get("tantieme", 0)),
+                                reliquat=float(ligne_tantieme.get("reliquat", 0)),
                             )
-                            session.add(tantieme)
-                            saved_count += 1
+                            session.add(nouveau_tantieme)
+                            compteur_tantiemes += 1
 
                 session.commit()
-                self.log_info(f"✅ {saved_count} éléments sauvegardés en base (bases + tantièmes)")
 
-            return saved_count
+                self.log_success(f"✅ Sauvegarde terminée: {compteur_bases} bases, {compteur_tantiemes} tantièmes")
+
+            return (compteur_tantiemes, compteur_bases)
 
         except Exception as e:
             self.log_error(f"Erreur lors de la sauvegarde: {str(e)}")
-            return 0
+            return (0, 0)
 
-    def save_combined_to_csv(self, dataframes: List[pd.DataFrame], output_filename: str = "reg114.csv") -> str:
-        """Sauvegarder le DataFrame fusionné en CSV"""
-        try:
-            if not dataframes:
-                self.log_warning("Aucun DataFrame à fusionner")
-                return ""
-
-            # Fusionner tous les DataFrames
-            combined_df = pd.concat(dataframes, ignore_index=True)
-
-            # Sauvegarder en CSV
-            combined_df.to_csv(output_filename, index=False, encoding="utf-8")
-
-            self.log_info(f"📁 DataFrame REG114 fusionné sauvegardé: {output_filename}")
-            self.log_info(f"📊 Total lignes sauvegardées: {len(combined_df)}")
-
-            return output_filename
-
-        except Exception as e:
-            self.log_error(f"Erreur lors de la sauvegarde CSV: {str(e)}")
-            return ""
-
-    def process_reg114_files(self, pdf_files: List[str]) -> tuple[List[pd.DataFrame], List[str]]:
+    def process_reg114_files(self, pdf_files: List[str]) -> tuple[dict[str, pd.DataFrame], List[str]]:
         """Traiter une liste de fichiers REG114"""
-        dataframes = []
+        dataframes_tantiemes = []
+        dataframes_bases = []
         processed_files = []
 
         for pdf_path in pdf_files:
             self.log_info(f"🔄 Traitement de {os.path.basename(pdf_path)}")
-            df = self.extract_data_from_pdf(pdf_path)
+            dict_dfs = self.extract_data_from_pdf(pdf_path)
 
-            if not df.empty:
-                dataframes.append(df)
+            if not dict_dfs["tantiemes"].empty and not dict_dfs["bases"].empty:
+                dataframes_tantiemes.append(dict_dfs["tantiemes"])
+                dataframes_bases.append(dict_dfs["bases"])
                 processed_files.append(os.path.basename(pdf_path))
 
-        return dataframes, processed_files
+        df_tantiemes_final = (
+            pd.concat(dataframes_tantiemes, ignore_index=True) if dataframes_tantiemes else pd.DataFrame()
+        )
+        df_bases_final = pd.concat(dataframes_bases, ignore_index=True) if dataframes_bases else pd.DataFrame()
+        df_dictionary = {
+            "tantiemes": df_tantiemes_final,
+            "bases": df_bases_final,
+        }
+        return df_dictionary, processed_files
