@@ -1,9 +1,21 @@
 import logging
 import traceback
+from typing import List
+
+import pandas as pd
 
 from sqlmodel import Session, select
 
-from models import ControleCharges, Facture, FactureElectricite, Fournisseur, Poste, TypeFacture, engine
+from models import (
+    ControleCharges,
+    Facture,
+    FactureElectricite,
+    Fournisseur,
+    Poste,
+    TypeFacture,
+    engine,
+    SourceColFacture,
+)
 from processors.ged001_processor import Ged001Processor
 from utils import logging_config  # noqa: F401
 from utils.extraction_champs import appliquer_extractions_automatiques
@@ -60,17 +72,18 @@ def save_to_database(df, groupe_id, annee, associations_pdfs=None):
 
                 postes_map[code_poste] = poste
 
+            facture_rows: List[dict] = []
             for idx, (index, row) in enumerate(df.iterrows()):
                 try:
-                    nature = str(row["nature"])
+                    nature = str(row[SourceColFacture.NATURE.value])
                     if nature not in postes_map:
                         continue
 
                     poste = postes_map[nature]
-                    numero_facture = str(row["numero_facture"])
+                    numero_facture = str(row[SourceColFacture.NUMERO_FACTURE.value])
 
                     try:
-                        montant = float(row["montant_comptable"])
+                        montant = float(row[SourceColFacture.MONTANT_COMPTABLE.value])
                     except (ValueError, TypeError):
                         continue
 
@@ -88,53 +101,37 @@ def save_to_database(df, groupe_id, annee, associations_pdfs=None):
                             processor = Ged001Processor()
                             texte_brut = processor.extraire_texte_brut_pdf(pdf_contenu)
 
-                    # Récupérer le fournisseur détecté
                     fournisseur_id = associations_fournisseurs.get(numero_facture)
 
-                    facture = Facture(
-                        poste_id=poste.id,
-                        nature=nature,
-                        numero_facture=numero_facture,
-                        code_journal=str(row["code_journal"]),
-                        numero_compte_comptable=str(row["numero_compte_comptable"]),
-                        montant_comptable=montant,
-                        libelle_ecriture=str(row["libelle_ecriture"]),
-                        references_partenaire_facture=str(row["references_partenaire_facture"]),
-                        fichier_source=str(row["fichier_source"]),
-                        ligne_pdf=int(row["ligne_pdf"]),
-                        pdf_facture_nom=pdf_nom,
-                        pdf_facture_contenu=pdf_contenu,
-                        texte_brut_pdf=texte_brut,
-                        fournisseur_id=fournisseur_id,
+                    facture_data = row.to_dict()
+                    facture_data.update(
+                        {
+                            "poste_id": poste.id,
+                            SourceColFacture.MONTANT_COMPTABLE.value: montant,
+                            "pdf_facture_nom": pdf_nom,
+                            "pdf_facture_contenu": pdf_contenu,
+                            "texte_brut_pdf": texte_brut,
+                            "fournisseur_id": fournisseur_id,
+                        }
                     )
-
-                    session.add(facture)
-                    session.flush()  # Pour obtenir l'ID de la facture
-
-                    # Créer automatiquement l'entrée dans la table spécialisée selon le type de fournisseur
-                    if fournisseur_id and facture.id is not None:
-                        fournisseur = session.get(Fournisseur, fournisseur_id)
-                        if fournisseur and fournisseur.type_facture == TypeFacture.ELECTRICITE:
-                            # Créer une entrée FactureElectricite
-                            facture_electricite = FactureElectricite(
-                                facture_id=facture.id,
-                                # Les autres champs seront remplis ultérieurement ou restent None
-                            )
-                            session.add(facture_electricite)
-                            logger.info(f"Facture électricité créée pour {numero_facture}")
-
-                        # Ici on peut ajouter d'autres types de factures spécialisées
-                        # elif fournisseur.type_facture == TypeFacture.GAZ:
-                        #     # Créer une entrée FactureGaz si elle existe
-                        #     pass
-                        # elif fournisseur.type_facture == TypeFacture.EAU:
-                        #     # Créer une entrée FactureEau si elle existe
-                        #     pass
-
+                    facture_rows.append(facture_data)
                 except Exception as e:
                     logger.error(f"Erreur ligne {idx + 1}: {e}")
                     logger.debug(f"Détails de la ligne: {row.to_dict()}")
                     continue
+
+            facture_objects = Facture.from_df(pd.DataFrame(facture_rows)) if facture_rows else []
+
+            session.add_all(facture_objects)
+            session.commit()
+
+            for facture in facture_objects:
+                if facture.fournisseur_id and facture.id is not None:
+                    fournisseur = session.get(Fournisseur, facture.fournisseur_id)
+                    if fournisseur and fournisseur.type_facture == TypeFacture.ELECTRICITE:
+                        facture_electricite = FactureElectricite(facture_id=facture.id)
+                        session.add(facture_electricite)
+                        logger.info(f"Facture électricité créée pour {facture.numero_facture}")
 
             session.commit()
 

@@ -248,46 +248,23 @@ class Reg114Processor(BaseProcessor):
 
             from models import BaseRepartition, Tantieme, engine
 
-            saved_count = 0
-            base_id_map = {}  # Mapping code_base -> base_id
+            base_df = df[df["type"] == "base_repartition"].copy()
+            tantieme_df = df[df["type"] == "tantieme"].copy()
+
+            base_objects = BaseRepartition.from_df(base_df, controle_id)
 
             with Session(engine) as session:
-                # D'abord sauvegarder les bases de répartition
-                for _, row in df.iterrows():
-                    if row.get("type") == "base_repartition":
-                        base_repartition = BaseRepartition(
-                            controle_id=controle_id,
-                            code=row["code"],
-                            nom=row["nom"],
-                            cdc_concerne=row.get("cdc_concerne"),
-                            fichier_source=row["fichier_source"],
-                            ligne_pdf=int(row["ligne_pdf"]),
-                        )
-                        session.add(base_repartition)
-                        session.flush()  # Pour obtenir l'ID
-                        base_id_map[row["code"]] = base_repartition.id
-                        saved_count += 1
-
-                # Ensuite sauvegarder les tantièmes
-                for _, row in df.iterrows():
-                    if row.get("type") == "tantieme":
-                        base_id = base_id_map.get(row["base_code"])
-                        if base_id:
-                            tantieme = Tantieme(
-                                base_repartition_id=base_id,
-                                numero_ug=str(row["numero_ug"]),
-                                numero_ca=str(row["numero_ca"]),
-                                debut_occupation=row.get("debut_occupation"),
-                                fin_occupation=row.get("fin_occupation"),
-                                tantieme=row.get("tantieme"),
-                                reliquat=row.get("reliquat"),
-                                fichier_source=row["fichier_source"],
-                                ligne_pdf=int(row["ligne_pdf"]),
-                            )
-                            session.add(tantieme)
-                            saved_count += 1
-
+                session.add_all(base_objects)
                 session.commit()
+
+                base_id_map = {b.code: b.id for b in base_objects}
+
+                tantieme_objects = Tantieme.from_df(tantieme_df, base_id_map)
+
+                session.add_all(tantieme_objects)
+                session.commit()
+
+                saved_count = len(base_objects) + len(tantieme_objects)
                 self.log_info(f"✅ {saved_count} éléments sauvegardés en base (bases + tantièmes)")
 
             return saved_count
