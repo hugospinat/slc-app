@@ -141,60 +141,24 @@ class Reg114Processor(BaseProcessor):
 
             from models import BaseRepartition, Tantieme, engine
 
-            compteur_bases = 0
-            compteur_tantiemes = 0
+            base_df = df[df["type"] == "base_repartition"].copy()
+            tantieme_df = df[df["type"] == "tantieme"].copy()
+
+            base_objects = BaseRepartition.from_df(base_df, controle_id)
 
             with Session(engine) as session:
-
-                # 1. Sauvegarder les bases de répartition
-                if not df_bases.empty:
-                    self.log_info(f"💾 Sauvegarde de {len(df_bases)} bases de répartition")
-
-                    for _, ligne_base in df_bases.iterrows():
-                        nouvelle_base = BaseRepartition(
-                            controle_id=controle_id,
-                            code=str(ligne_base["code_base"]),
-                            nom=str(ligne_base["nom_base"]),
-                        )
-                        session.add(nouvelle_base)
-                        compteur_bases += 1
-
-                # Valider les bases pour récupérer les IDs
+                session.add_all(base_objects)
                 session.commit()
 
-                # 2. Sauvegarder les tantièmes
-                if not df_tantiemes.empty:
-                    self.log_info(f"💾 Sauvegarde de {len(df_tantiemes)} tantièmes")
+                base_id_map = {b.code: b.id for b in base_objects}
 
-                    # Récupérer les bases créées pour l'association (SQLModel style)
-                    bases_creees = session.exec(
-                        select(BaseRepartition).where(BaseRepartition.controle_id == controle_id)
-                    ).all()
+                tantieme_objects = Tantieme.from_df(tantieme_df, base_id_map)
 
-                    # Créer un dictionnaire code -> id pour l'association
-                    mapping_bases = {base.code: base.id for base in bases_creees}
-
-                    for _, ligne_tantieme in df_tantiemes.iterrows():
-                        code_base = str(ligne_tantieme.get("code_base_actuel", ""))
-                        base_id = mapping_bases.get(code_base)
-
-                        if base_id:
-                            # Extraire le numéro UG depuis description_ligne
-                            nouveau_tantieme = Tantieme(
-                                base_repartition_id=base_id,
-                                numero_ug=ligne_tantieme.get("numero_ug", 0),
-                                numero_ca=str(ligne_tantieme.get("numero_ca", "")),
-                                debut_occupation=ligne_tantieme.get("debut_occupation"),
-                                fin_occupation=ligne_tantieme.get("fin_occupation"),
-                                tantieme=float(ligne_tantieme.get("tantieme", 0)),
-                                reliquat=float(ligne_tantieme.get("reliquat", 0)),
-                            )
-                            session.add(nouveau_tantieme)
-                            compteur_tantiemes += 1
-
+                session.add_all(tantieme_objects)
                 session.commit()
 
-                self.log_success(f"✅ Sauvegarde terminée: {compteur_bases} bases, {compteur_tantiemes} tantièmes")
+                saved_count = len(base_objects) + len(tantieme_objects)
+                self.log_info(f"✅ {saved_count} éléments sauvegardés en base (bases + tantièmes)")
 
             return (compteur_tantiemes, compteur_bases)
 
