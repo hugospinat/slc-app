@@ -10,6 +10,8 @@ from .base_processor import BaseProcessor
 class ZipProcessor(BaseProcessor):
     """Processeur pour l'extraction et la gestion des fichiers ZIP"""
 
+    dir_path: str
+
     def __init__(self):
         super().__init__()
 
@@ -28,50 +30,36 @@ class ZipProcessor(BaseProcessor):
             if os.path.exists(extract_dir):
                 shutil.rmtree(extract_dir, ignore_errors=True)
             raise
-
+        self.dir_path = extract_dir
         return extract_dir
 
-    def find_reg010_pdfs(self, directory: str) -> List[str]:
-        """Trouver tous les fichiers PDF contenant 'REG010' dans le nom"""
+    def find_pattern_pdfs(self, pattern: str) -> List[str]:
+        """Trouver tous les fichiers PDF contenant un motif dans le nom"""
         pdf_files = []
 
-        for root, dirs, files in os.walk(directory):
+        for root, dirs, files in os.walk(self.dir_path):
             for file in files:
-                if file.lower().endswith(".pdf") and "REG010" in file:
+                if file.lower().endswith(".pdf") and pattern in file:
                     pdf_files.append(os.path.join(root, file))
 
-        self.log_info(f"Fichiers REG010 trouvés: {len(pdf_files)}")
+        self.log_info(f"Fichiers trouvés avec le motif '{pattern}': {len(pdf_files)}")
         return pdf_files
 
-    def find_ged001_pdfs(self, directory: str) -> List[str]:
-        """Trouver tous les fichiers PDF contenant 'GED001' dans le nom"""
-        pdf_files = []
+    def find_unique_pattern_pdfs(self, pattern: str) -> str | None:
+        """Trouver le fichier PDF contenant un motif unique dans le nom"""
+        results = self.find_pattern_pdfs(pattern)
+        self.log_info(f"Fichiers trouvés avec le motif '{pattern}': {len(results)}")
+        if not results:
+            self.log_warning(f"Aucun fichier trouvé avec le motif '{pattern}'")
+        if len(results) > 1:
+            self.log_warning(f"Plusieurs fichiers trouvés avec le motif '{pattern}': {results}")
+        return results[0] if len(results) == 1 else None
 
-        for root, dirs, files in os.walk(directory):
-            for file in files:
-                if file.lower().endswith(".pdf") and "GED001" in file:
-                    pdf_files.append(os.path.join(root, file))
-
-        self.log_info(f"Fichiers GED001 trouvés: {len(pdf_files)}")
-        return pdf_files
-
-    def find_reg114_pdfs(self, directory: str) -> List[str]:
-        """Trouver tous les fichiers PDF contenant 'REG114' dans le nom"""
-        pdf_files = []
-
-        for root, dirs, files in os.walk(directory):
-            for file in files:
-                if file.lower().endswith(".pdf") and "REG114" in file:
-                    pdf_files.append(os.path.join(root, file))
-
-        self.log_info(f"Fichiers REG114 trouvés: {len(pdf_files)}")
-        return pdf_files
-
-    def cleanup_directory(self, directory: str):
+    def cleanup_directory(self):
         """Nettoyer un répertoire temporaire"""
-        if directory and os.path.exists(directory):
+        if self.dir_path and os.path.exists(self.dir_path):
             try:
-                shutil.rmtree(directory, ignore_errors=True)
-                self.log_info(f"Répertoire temporaire nettoyé: {directory}")
+                shutil.rmtree(self.dir_path, ignore_errors=True)
+                self.log_info(f"Répertoire temporaire nettoyé: {self.dir_path}")
             except Exception as e:
-                self.log_warning(f"Impossible de nettoyer le répertoire {directory}: {e}")
+                self.log_warning(f"Impossible de nettoyer le répertoire {self.dir_path}: {e}")

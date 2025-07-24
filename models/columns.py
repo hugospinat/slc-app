@@ -1,16 +1,34 @@
 from enum import Enum
 
 
-class SourceColBaseRepartition(str, Enum):
+class SourceDf(str, Enum):
+    TANTIEMES = "tantiemes"
+    BASES_REPARTITION = "bases_repartition"
+    FACTURES = "factures"
+    GROUPES = "groupes"
+    CONTROLES = "controles"
+    POSTES = "postes"
+
+
+class SourceColBaseRep(str, Enum):
+    CONTROLE_ID = "controle_id"
     CODE = "code"
     NOM = "nom"
-    CDC_CONCERNE = "cdc_concerne"
     FICHIER_SOURCE = "fichier_source"
     LIGNE_PDF = "ligne_pdf"
 
 
+class SourceColPoste(str, Enum):
+    CONTROLE_ID = "controle_id"
+    NOM = "nom"
+    CODE = "code"
+    FICHIER_SOURCE = "fichier_source"
+    LIGNE_PDF = "ligne_pdf"
+    GROUPE_ID = "groupe_id"
+
+
 class SourceColTantieme(str, Enum):
-    BASE_CODE = "base_code"
+    BASE_ID = "base_id"
     NUMERO_UG = "numero_ug"
     NUMERO_CA = "numero_ca"
     DEBUT_OCCUPATION = "debut_occupation"
@@ -22,7 +40,7 @@ class SourceColTantieme(str, Enum):
 
 
 class SourceColFacture(str, Enum):
-    NATURE = "nature"
+    POSTE_ID = "poste_id"
     NUMERO_FACTURE = "numero_facture"
     CODE_JOURNAL = "code_journal"
     NUMERO_COMPTE_COMPTABLE = "numero_compte_comptable"

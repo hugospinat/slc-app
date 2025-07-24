@@ -2,6 +2,8 @@ from typing import List, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
 
+from .facture import Facture
+from .regle_extraction_champ import RegleExtractionChamp
 from .type_facture import TypeFacture
 
 
@@ -15,5 +17,5 @@ class Fournisseur(SQLModel, table=True):
     regex_detection: Optional[str] = None
 
     # Relations
-    factures: List["Facture"] = Relationship(back_populates="fournisseur")
-    regles_extraction: List["RegleExtractionChamp"] = Relationship(back_populates="fournisseur")
+    factures: List[Facture] = Relationship(back_populates="fournisseur")
+    regles_extraction: List[RegleExtractionChamp] = Relationship(back_populates="fournisseur")

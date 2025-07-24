@@ -1,9 +1,12 @@
 import os
-from typing import Dict, List
+from typing import List, Tuple
 
 import pandas as pd
 import tabula.io as tabula
-from sqlmodel import select
+
+from models.base_repartition import BaseRepartition
+from models.columns import SourceColBaseRep, SourceColTantieme
+from models.tantieme import Tantieme
 
 from .base_processor import BaseProcessor
 
@@ -14,7 +17,7 @@ class Reg114Processor(BaseProcessor):
     def __init__(self):
         super().__init__()
 
-    def extract_data_from_pdf(self, pdf_path: str) -> Dict[str, pd.DataFrame]:
+    def _extract_data_from_pdf(self, pdf_path: str) -> pd.DataFrame:
         """Extraire les données d'un PDF REG114 de manière robuste"""
         try:
             self.log_info(f"Traitement du fichier REG114: {pdf_path}")
@@ -30,7 +33,7 @@ class Reg114Processor(BaseProcessor):
 
             if not dfs:
                 self.log_warning(f"Aucun tableau trouvé dans {pdf_path}")
-                return {}
+                raise ValueError(f"Aucun tableau trouvé dans {pdf_path}")
 
             # Combiner tous les DataFrames
             combined_df = pd.concat(dfs, ignore_index=True)
@@ -38,19 +41,19 @@ class Reg114Processor(BaseProcessor):
 
             if combined_df.empty or combined_df.shape[1] < 6:
                 self.log_error(f"Format incorrect: {combined_df.shape[1]} colonnes (minimum 6 requis pour REG114)")
-                return {}
+                raise ValueError(f"Format incorrect: {combined_df.shape[1]} colonnes (minimum 6 requis pour REG114)")
 
             # Nettoyer et structurer les données
-            return self._process_extracted_data(combined_df)
+            return combined_df
 
         except Exception as e:
             self.log_error(f"Erreur dans {pdf_path}: {str(e)}")
             import traceback
 
             traceback.print_exc()
-            return {}
+            raise ValueError(f"Erreur lors de l'extraction des données de {pdf_path}: {str(e)}") from e
 
-    def _process_extracted_data(self, df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+    def _process_extracted_data(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Traiter et nettoyer les données extraites du REG114 avec détection des bases de répartition"""
         # Nommer les colonnes selon le modèle de données REG114
         colonnes_reg114 = [
@@ -97,11 +100,11 @@ class Reg114Processor(BaseProcessor):
             self.log_info(f"📋 Codes de base propagés sur {len(df_avec_code)} lignes")
             self.log_info(f"📊 {len(bases_repartition)} bases de répartition identifiées")
 
-            return {"df_avec_code": df_avec_code, "bases_repartition": bases_repartition}
+            return df_avec_code, bases_repartition
 
         except Exception as e:
             self.log_error(f"Erreur lors du traitement des données: {str(e)}")
-            return {}
+            raise ValueError("❌ Erreur dans le traitement des données REG114") from e
 
     def _filtrer_par_nombre_colonnes(self, df: pd.DataFrame) -> pd.DataFrame:
         """Supprimer les lignes ayant 7 colonnes ou plus non vides (section écarts théoriques)"""
@@ -127,66 +130,49 @@ class Reg114Processor(BaseProcessor):
 
         return df[mask_a_garder].copy()
 
-    def save_to_database(self, dfs: Dict[str, pd.DataFrame], controle_id: int) -> tuple[int, int]:
+    def _save_to_database(
+        self, base_df: pd.DataFrame, tantieme_df: pd.DataFrame, controle_id: int
+    ) -> Tuple[List[Tantieme], List[BaseRepartition]]:
         """Sauvegarder les bases de répartition et tantièmes en base de données"""
-        if not dfs:
+        if base_df.empty or tantieme_df.empty:
             self.log_warning("DataFrames vides, rien à sauvegarder")
-            return (0, 0)
-
-        df_tantiemes = dfs.get("tantiemes", pd.DataFrame())
-        df_bases = dfs.get("bases", pd.DataFrame())
-
+            raise ValueError("❌ DataFrames vides, rien à sauvegarder")
         try:
             from sqlmodel import Session
 
             from models import BaseRepartition, Tantieme, engine
-
-            base_df = df[df["type"] == "base_repartition"].copy()
-            tantieme_df = df[df["type"] == "tantieme"].copy()
 
             base_objects = BaseRepartition.from_df(base_df, controle_id)
 
             with Session(engine) as session:
                 session.add_all(base_objects)
                 session.commit()
+                session.refresh(base_objects)
 
                 base_id_map = {b.code: b.id for b in base_objects}
+                tantieme_df[SourceColTantieme.BASE_ID] = tantieme_df["code_base"].map(base_id_map)
 
-                tantieme_objects = Tantieme.from_df(tantieme_df, base_id_map)
+                tantieme_objects = Tantieme.from_df(tantieme_df)
 
                 session.add_all(tantieme_objects)
                 session.commit()
+                session.refresh(tantieme_objects)
 
-                saved_count = len(base_objects) + len(tantieme_objects)
-                self.log_info(f"✅ {saved_count} éléments sauvegardés en base (bases + tantièmes)")
+                compteur_tantiemes, compteur_bases = len(base_objects), len(tantieme_objects)
+                self.log_info(f"✅ {compteur_tantiemes} bases sauvegardées en base")
+                self.log_info(f"✅ {compteur_bases} tantièmes sauvegardés en base")
 
-            return (compteur_tantiemes, compteur_bases)
+            return tantieme_objects, base_objects
 
         except Exception as e:
-            self.log_error(f"Erreur lors de la sauvegarde: {str(e)}")
-            return (0, 0)
+            raise ValueError(f"❌ Erreur lors de la sauvegarde en base de données: {str(e)}") from e
 
-    def process_reg114_files(self, pdf_files: List[str]) -> tuple[dict[str, pd.DataFrame], List[str]]:
-        """Traiter une liste de fichiers REG114"""
-        dataframes_tantiemes = []
-        dataframes_bases = []
-        processed_files = []
+    def process_reg114(self, pdf_path: str, controle_id: int) -> Tuple[List[Tantieme], List[BaseRepartition]]:
 
-        for pdf_path in pdf_files:
-            self.log_info(f"🔄 Traitement de {os.path.basename(pdf_path)}")
-            dict_dfs = self.extract_data_from_pdf(pdf_path)
-
-            if not dict_dfs["tantiemes"].empty and not dict_dfs["bases"].empty:
-                dataframes_tantiemes.append(dict_dfs["tantiemes"])
-                dataframes_bases.append(dict_dfs["bases"])
-                processed_files.append(os.path.basename(pdf_path))
-
-        df_tantiemes_final = (
-            pd.concat(dataframes_tantiemes, ignore_index=True) if dataframes_tantiemes else pd.DataFrame()
-        )
-        df_bases_final = pd.concat(dataframes_bases, ignore_index=True) if dataframes_bases else pd.DataFrame()
-        df_dictionary = {
-            "tantiemes": df_tantiemes_final,
-            "bases": df_bases_final,
-        }
-        return df_dictionary, processed_files
+        self.log_info(f"🔄 Traitement de {os.path.basename(pdf_path)}")
+        data = self._extract_data_from_pdf(pdf_path)
+        df_tantiemes, df_bases = self._process_extracted_data(data)
+        df_tantiemes[SourceColTantieme.FICHIER_SOURCE] = os.path.basename(pdf_path)
+        df_bases[SourceColBaseRep.CONTROLE_ID] = controle_id
+        tantiemes, bases_repartition = self._save_to_database(df_tantiemes, df_bases, controle_id)
+        return tantiemes, bases_repartition

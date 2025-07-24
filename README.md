@@ -13,12 +13,14 @@ Application Python utilisant SQLModel et Streamlit pour le contrôle des charges
 ## Installation
 
 1. Créer et activer l'environnement virtuel :
+
 ```bash
 # L'environnement .venv est déjà créé
 .venv\Scripts\activate
 ```
 
 2. Installer les dépendances :
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -26,52 +28,71 @@ pip install -r requirements.txt
 ## Utilisation
 
 1. Lancer l'application :
+
 ```bash
 streamlit run app.py
 ```
 
 2. Ouvrir votre navigateur à l'adresse : http://localhost:8501
 
-## Structure du projet
+#<!-- Use this file to provide workspace-specific custom instructions to Copilot. For more details, visit https://code.visualstudio.com/docs/copilot/copilot-customization#_use-a-githubcopilotinstructionsmd-file -->
 
-- `app.py` : Application Streamlit principale
-- `models.py` : Modèles SQLModel pour la base de données
-- `file_processor.py` : Logique de traitement des fichiers ZIP/PDF
-- `requirements.txt` : Dépendances Python
-- `charge_control.db` : Base de données SQLite (créée automatiquement)
+# Application de Contrôle des Charges
 
-## Workflow
+Cette application Python utilise SQLModel et Streamlit pour le contrôle des charges.
 
-1. **Créer un groupe** : Définir nom et identifiant du groupe
-2. **Importer un fichier ZIP** : Upload du ZIP contenant les PDF REG010
-3. **Extraction automatique** : Le système extrait et filtre les données
-4. **Validation** : Réviser et valider/contester chaque facture
-5. **Tableau de bord** : Visualiser les statistiques
+## Architecture
 
-## Schéma de données
+- **SQLModel** : ORM pour la gestion de la base de données SQLite
+- **Streamlit** : Interface utilisateur web
+- **Tabula-py** : Extraction de données depuis les PDF
+- **Pandas** : Manipulation des données
 
-### Tables principales :
-- **Groupe** : Informations du groupe (nom, identifiant)
-- **ControleCharges** : Contrôle par année et groupe
-- **Facture** : Données extraites avec 7 champs :
-  - Nature
-  - N° Facture  
-  - Code Journal
-  - N° Cpte Comptable
-  - Montant Comptable
-  - Libelle Ecriture
-  - References Partenaire facture
+Merci d'utiliser exclusivement SQLModel pour les modèles de données et les requêtes SQL. Évitez d'utiliser SQLAlchemy directement.
 
-### Statuts de validation :
-- `en_attente` : Facture en attente de validation
-- `validee` : Facture validée
-- `contestee` : Facture contestée (avec commentaire)
+## Modèles de données
 
-## Technologies utilisées
+- **Groupe** : Représente un groupe avec nom et identifiant
+- **ControleCharges** : Contrôle des charges pour une année et un groupe
+- **Facture** : Données extraites des PDF avec statut de validation, rattaché à un Poste
+- **FacturePDF** : Représente un PDF de facture avec son contenu et ses métadonnées
+- **Poste** : Poste des charges rattachés à un ControleCharges
+- **Tantieme** : Représente les tantièmes d'une UG dans une BaseRepartition
+- **TypeFacture** : Enumération des types de factures des tables de factures étendues (électricité, eau, etc.)
+- **BaseRepartition** : Représente les bases de répartition pour les postes de charges, rattachées à un ControleCharges
+- **FactureEtendue** : FactureElectricite, FactureEau, FactureGaz, etc. Représente les factures étendues avec des champs spécifiques pour chaque type de facture, rattachées à une Facture.
+- **Fournisseur** : Représente un fournisseur avec son nom et ses regex de reconnaissance et le champ dans le quel applique le regex pour associe le fournisseur à la Facture. De plus, il est associé à un TypeFacture étendu (c'est ce qui permet de savoir si c'est une facture d'électricité, d'eau, etc.).
+- **RegleExtractionChamp** : Rattaché à un Fournissuer. Représente les règles d'extraction des données depuis les PDF, avec regex et choix du champ d'output de la Facture ou FactureEtendue
 
-- **Python 3.x**
-- **SQLModel** : ORM moderne basé sur Pydantic
-- **Streamlit** : Framework web pour applications de données
-- **Tabula-py** : Extraction de tableaux depuis PDF
-- **Pandas** : Manipulation de données
-- **SQLite** : Base de données locale
+## Processus d'importation
+
+1. Décompression des fichiers ZIP
+2. Création du ControleCharges pour l'année et le groupe
+3. Importation séquentiel des PDF REG010, REG114, GED001
+   - Extraction des données avec tabula (fonction `_extract_data_from_pdf`)
+   - Nettoyage et validation des données exclusivement avec pandas (fonction `_process_extracted_data`)
+   - Sauvegarde des données extraites dans la base de données (fonction `_save_to_db`, exclusivement avec SQLModel .add_all()) retournant les objets SQLModel correspondants
+
+### Gestion des erreurs
+
+- Lever des exceptions explicites si l’erreur est grave ou si le format est incorrect, par exemple en utilisant `raise ValueError("Message d'erreur")` ou `raise Exception("Message d'erreur")` pour les erreurs générales.
+- Logguer les événements et contextes, même sans plantage
+- Combiner les deux intelligemment :
+  - log + raise si tu veux que l’info soit visible dans les logs et remonter au caller
+  - log seul si tu veux continuer malgré une anomalie non critique
+  - raise seul si c’est une erreur franche, et que tu laisses le contexte gérer
+
+## Fonctionnalités principales
+
+1. Import de fichiers ZIP contenant des PDF REG010, REG114, GED001
+   - Extraction des PDF et stockage dans la base de données
+2. Extraction automatique des données avec tabula (option lattice)
+3. Reconnaissance des Fournisseurs grace au regex fournisseur et typage des factures grace à cela (un Type de facture étendu est associé à chaque Fournisseur)
+4. Puis application des règles d'extraction fournisseur pour remplir les champs de la Facture ou FactureEtendue
+5. TODO : Gestion des regles métiers et validation ou rejet des factures / tantièmes à partir de celles-ci
+6. TODO : Gestion des allers-retours SLC - association - bailleur (et suivi des échanges)
+
+## Style attendu
+
+- Favoriser les `@classmethod` pour les méthodes d’import depuis DataFrame
+- Utiliser des `Enum` pour les colonnes sources (éviter les chaînes brutes)

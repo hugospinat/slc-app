@@ -4,6 +4,8 @@ import pandas as pd
 from sqlmodel import Field, Relationship, SQLModel
 
 from .columns import SourceColBaseRepartition
+from .controle_charges import ControleCharges
+from .tantieme import Tantieme
 
 
 class BaseRepartition(SQLModel, table=True):
@@ -18,8 +20,8 @@ class BaseRepartition(SQLModel, table=True):
     ligne_pdf: int
 
     # Relations
-    controle: "ControleCharges" = Relationship(back_populates="bases_repartition")
-    tantiemes: List["Tantieme"] = Relationship(back_populates="base_repartition")
+    controle: ControleCharges = Relationship(back_populates="bases_repartition")
+    tantiemes: List[Tantieme] = Relationship(back_populates="base_repartition")
 
     column_map = {
         "code": SourceColBaseRepartition.CODE,
@@ -34,4 +36,4 @@ class BaseRepartition(SQLModel, table=True):
         rename_map = {enum.value: field for field, enum in cls.column_map.items()}
         df = df.rename(columns=rename_map)
         df["controle_id"] = controle_id
-        return [cls(**row) for row in df.to_dict(orient="records")]
+        return df.apply(lambda row: cls(**row.to_dict()), axis=1).tolist()  # type: ignore

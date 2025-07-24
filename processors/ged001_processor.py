@@ -4,6 +4,8 @@ from typing import Dict, List
 
 import fitz
 
+from models import Facture, FacturePDF
+
 from .base_processor import BaseProcessor
 
 
@@ -13,7 +15,7 @@ class Ged001Processor(BaseProcessor):
     def __init__(self):
         super().__init__()
 
-    def extraire_texte_brut_pdf(self, contenu_pdf: bytes) -> str:
+    def _extraire_texte_brut_pdf(self, contenu_pdf: bytes) -> str:
         """
         Extraire le texte brut d'un PDF à partir de son contenu binaire
         """
@@ -35,7 +37,7 @@ class Ged001Processor(BaseProcessor):
             self.log_error(f"Erreur lors de l'extraction du texte brut: {e}")
             return ""
 
-    def extraire_pages_facture(self, chemin_pdf: str, pages: List[int]) -> bytes:
+    def _extraire_pages_facture(self, chemin_pdf: str, pages: List[int]) -> bytes:
         """
         Extraire certaines pages d'un PDF et retourner le contenu binaire
         """
@@ -62,7 +64,7 @@ class Ged001Processor(BaseProcessor):
             self.log_error(f"Erreur lors de l'extraction des pages: {e}")
             return b""
 
-    def analyser_et_extraire_factures_ged001(self, chemin_pdf: str) -> Dict[str, Dict]:
+    def _analyser_et_extraire_factures_ged001(self, chemin_pdf: str) -> Dict[str, Dict]:
         """
         Analyser un PDF GED001 en un seul passage et extraire directement tous les PDFs de factures
         Retourne: {identifiant_facture: {'type': 'BONTRV01'|'FACFOU01', 'pdf_contenu': bytes, 'nb_pages': int}}
@@ -157,24 +159,31 @@ class Ged001Processor(BaseProcessor):
         else:
             return "", ""
 
-    def process_ged001_files(self, ged_files: List[str]) -> Dict[str, Dict]:
+    def _save_to_db(self, factures_extraites: Dict[str, Dict], factures: List[Facture]) -> List[Facture]:
+        """
+        Enregistrer les factures extraites dans la base de données
+        """
+        pdf_facture = FacturePDF(chemain_pdf="", contenu=b"")
+        for identifiant, data in factures_extraites.items():
+            # Vérifier si la facture existe déjà
+            facture_existante = next((f for f in factures if identifiant in f.numero_facture), None)
+
+        return factures
+
+    def process_ged001(self, ged_file: str, factures: List[Facture]) -> Dict[str, Dict]:
         """Traiter une liste de fichiers GED001"""
-        toutes_factures_ged001 = {}
 
-        if ged_files:
-            self.log_info("Analyse et extraction des fichiers GED001")
-            for ged_file in ged_files:
-                nom_fichier = os.path.basename(ged_file)
-                self.log_info(f"🔍 Traitement de {nom_fichier}")
+        nom_fichier = os.path.basename(ged_file)
+        self.log_info(f"🔍 Traitement du GED001 : {nom_fichier}")
 
-                factures_extraites = self.analyser_et_extraire_factures_ged001(ged_file)
+        factures_extraites = self._analyser_et_extraire_factures_ged001(ged_file)
 
-                if factures_extraites:
-                    self.log_info(f"  📊 {len(factures_extraites)} factures extraites:")
-                    for id_facture, info in factures_extraites.items():
-                        toutes_factures_ged001[id_facture] = info
-                        self.log_info(f"    - {id_facture} ({info['type']}): {info['nb_pages']} pages")
-                else:
-                    self.log_warning(f"Aucune facture extraite de {nom_fichier}")
+        if not factures_extraites:
+            self.log_warning(f"Aucune facture trouvée dans le fichier GED001: {nom_fichier}")
+            raise ValueError(f"Aucune facture trouvée dans le fichier GED001: {nom_fichier}")
 
-        return toutes_factures_ged001
+        self.log_info(f"  📊 {len(factures_extraites)} factures extraites:")
+
+        self._save_to_db(factures_extraites, factures)
+
+        return factures_extraites

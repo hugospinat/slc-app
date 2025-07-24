@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 from sqlmodel import Session, select
 
-from processors import FileProcessor
+from processors import CDCProcessor
 from utils.database import save_to_database
 
 
@@ -75,7 +75,7 @@ def main():
 
                     try:
                         # Traiter le fichier
-                        processor = FileProcessor()
+                        processor = CDCProcessor()
                         dataframes, processed_files, factures_ged001 = processor.process_zip_file(tmp_path)
 
                         if not dataframes:

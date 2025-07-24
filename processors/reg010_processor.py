@@ -1,9 +1,13 @@
 import os
 import re
-from typing import List
+from typing import List, Tuple
 
 import pandas as pd
 import tabula.io as tabula
+
+from models import Facture
+from models.columns import SourceColFacture, SourceColPoste
+from models.poste import Poste
 
 from .base_processor import BaseProcessor
 
@@ -14,7 +18,7 @@ class Reg010Processor(BaseProcessor):
     def __init__(self):
         super().__init__()
 
-    def extract_data_from_pdf(self, pdf_path: str) -> pd.DataFrame:
+    def _extract_data_from_pdf(self, pdf_path: str) -> pd.DataFrame | None:
         """Extraire les données d'un PDF REG010 de manière robuste"""
         try:
             self.log_info(f"Traitement du fichier: {pdf_path}")
@@ -30,7 +34,7 @@ class Reg010Processor(BaseProcessor):
 
             if not dfs:
                 self.log_warning(f"Aucun tableau trouvé dans {pdf_path}")
-                return pd.DataFrame()
+                return None
 
             # Combiner tous les DataFrames
             combined_df = pd.concat(dfs, ignore_index=True)
@@ -38,31 +42,32 @@ class Reg010Processor(BaseProcessor):
 
             if combined_df.empty or combined_df.shape[1] < 7:
                 self.log_error(f"Format incorrect: {combined_df.shape[1]} colonnes (minimum 7 requis)")
-                return pd.DataFrame()
+                return None
 
-            # Nettoyer et structurer les données
-            return self._process_extracted_data(combined_df, pdf_path)
+            return combined_df
 
         except Exception as e:
             self.log_error(f"Erreur dans {pdf_path}: {str(e)}")
             import traceback
 
             traceback.print_exc()
-            return pd.DataFrame()
+            return None
 
-    def _process_extracted_data(self, combined_df: pd.DataFrame, pdf_path: str) -> pd.DataFrame:
+    def _process_extracted_data(
+        self, combined_df: pd.DataFrame, pdf_path: str
+    ) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
         """Traiter les données extraites : nettoyage, filtrage et validation"""
 
         # Garder seulement les 7 premières colonnes
         combined_df = combined_df.iloc[:, :7]
         combined_df.columns = [
-            "nature",
-            "numero_facture",
-            "code_journal",
-            "numero_compte_comptable",
-            "montant_comptable",
-            "libelle_ecriture",
-            "references_partenaire_facture",
+            SourceColFacture.POSTE_ID,
+            SourceColFacture.NUMERO_FACTURE,
+            SourceColFacture.CODE_JOURNAL,
+            SourceColFacture.NUMERO_COMPTE_COMPTABLE,
+            SourceColFacture.MONTANT_COMPTABLE,
+            SourceColFacture.LIBELLE_ECRITURE,
+            SourceColFacture.REFERENCES_PARTENAIRE_FACTURE,
         ]
 
         # Nettoyer les données: supprimer les lignes complètement vides
@@ -70,55 +75,64 @@ class Reg010Processor(BaseProcessor):
         self.log_info(f"📊 Après suppression des lignes vides: {len(combined_df)}")
 
         # ÉTAPE 1: Filtrer par montants valides
-        filtered_df = self._filter_by_valid_amounts(combined_df, pdf_path)
+        factures_df = self._filter_by_valid_amounts(combined_df, pdf_path)
 
-        if filtered_df.empty:
+        if factures_df.empty:
             self.log_warning("Aucune ligne avec montant valide trouvée")
-            return pd.DataFrame()
+            return None, None
 
         # ÉTAPE 2: Déduplication
-        filtered_df = self._remove_duplicates(filtered_df)
+        factures_df = self._remove_duplicates(factures_df)
 
         # ÉTAPE 3: Extension des natures
-        filtered_df = self._extend_natures(filtered_df)
+        factures_df = self._extend_natures(factures_df)
 
         # ÉTAPE 4: Conversion des montants
-        filtered_df["montant_comptable"] = filtered_df["montant_comptable"].str.replace(",", ".").astype(float)
+        factures_df[SourceColFacture.MONTANT_COMPTABLE] = (
+            factures_df[SourceColFacture.MONTANT_COMPTABLE].str.replace(",", ".").astype(float)
+        )
 
         # ÉTAPE 5: Ajouter les métadonnées
-        filtered_df["fichier_source"] = os.path.basename(pdf_path)
-        filtered_df["ligne_pdf"] = range(1, len(filtered_df) + 1)
+        factures_df[SourceColFacture.FICHIER_SOURCE] = os.path.basename(pdf_path)
+        factures_df[SourceColFacture.LIGNE_PDF] = range(1, len(factures_df) + 1)
 
         # ÉTAPE 6: Validation finale
-        filtered_df = filtered_df.dropna(subset=["nature"])
+        factures_df = factures_df.dropna(subset=[SourceColFacture.POSTE_ID])
 
         # ÉTAPE 7: Déduplication finale
-        filtered_df = self._final_deduplication(filtered_df)
+        factures_df = self._final_deduplication(factures_df)
+
+        # ÉTAPE 8: Extraire les natures uniques
+        natures_uniques = (
+            factures_df[[SourceColFacture.POSTE_ID]].copy().dropna().drop_duplicates().reset_index(drop=True)
+        )
+        natures_uniques.rename(columns={SourceColFacture.POSTE_ID: "nom"}, inplace=True)
+        self.log_info(f"🏷️ {len(natures_uniques)} natures uniques identifiées.")
 
         # Afficher les résultats finaux
-        self._display_final_results(filtered_df)
+        self._display_final_results(factures_df)
 
-        return filtered_df
+        return factures_df, natures_uniques
 
     def _filter_by_valid_amounts(self, df: pd.DataFrame, pdf_path: str) -> pd.DataFrame:
         """Filtrer les lignes avec des montants valides"""
         self.log_info("💰 Filtrage par montants valides...")
 
         montant_pattern = r"^-?\d+\.\d{1,2}$"
-        df["montant_comptable"] = df["montant_comptable"].astype(str).str.strip()
+        df[SourceColFacture.MONTANT_COMPTABLE] = df[SourceColFacture.MONTANT_COMPTABLE].astype(str).str.strip()
 
         # Log des lignes rejetées
         for idx, row in df.iterrows():
-            montant = str(row["montant_comptable"]).strip()
+            montant = str(row[SourceColFacture.MONTANT_COMPTABLE]).strip()
             if not montant or montant == "nan" or not re.match(montant_pattern, montant):
                 self.log_debug(f"Ligne rejetée ({os.path.basename(pdf_path)}) - Montant invalide: '{montant}'")
 
         # Masque pour les montants valides
         mask_montant_valide = (
-            df["montant_comptable"].notna()
-            & (df["montant_comptable"] != "nan")
-            & (df["montant_comptable"] != "")
-            & df["montant_comptable"].str.match(montant_pattern, na=False)
+            df[SourceColFacture.MONTANT_COMPTABLE].notna()
+            & (df[SourceColFacture.MONTANT_COMPTABLE] != "nan")
+            & (df[SourceColFacture.MONTANT_COMPTABLE] != "")
+            & df[SourceColFacture.MONTANT_COMPTABLE].str.match(montant_pattern, na=False)
         )
 
         self.log_info(f"📊 Lignes avant filtrage montants: {len(df)}")
@@ -188,21 +202,58 @@ class Reg010Processor(BaseProcessor):
             self.log_info("📋 Premières lignes validées:")
             for i, row in df.head(3).iterrows():
                 self.log_info(
-                    f"  - Nature: {row['nature']}, Facture: {row['numero_facture']}, Montant: {row['montant_comptable']}"
+                    f"  - Nature: {row[SourceColPoste.NOM]}, Facture: {row[SourceColFacture.NUMERO_FACTURE]}, Montant: {row[SourceColFacture.MONTANT_COMPTABLE]}"
                 )
 
-    def process_reg010_files(self, pdf_files: List[str]) -> tuple[List[pd.DataFrame], List[str]]:
+    def _save_to_database(
+        self, df_factures: pd.DataFrame, df_postes: pd.DataFrame
+    ) -> Tuple[List[Facture], List[Poste]]:
+        """Sauvegarder les bases de répartition et tantièmes en base de données"""
+        if df_factures.empty or df_postes.empty:
+            raise ValueError("❌ Les DataFrames factures ou postes sont vides, impossible de continuer l'import.")
+        try:
+            from sqlmodel import Session
+
+            from models.db import engine
+
+            postes = Poste.from_df(df_postes)
+
+            with Session(engine) as session:
+                session.add_all(postes)
+                session.commit()
+                session.refresh(postes)
+
+                poste_id_map = {p.code: p.id for p in postes}
+                df_factures[SourceColFacture.POSTE_ID] = df_factures["code_poste"].map(poste_id_map)
+
+                factures = Facture.from_df(df_factures)
+
+                session.add_all(factures)
+                session.commit()
+
+                compteur_postes, compteur_bases = len(postes), len(factures)
+                self.log_info(f"✅ {compteur_postes} postes sauvegardés en base")
+                self.log_info(f"✅ {compteur_bases} factures sauvegardées en base")
+
+            return factures, postes
+
+        except Exception as e:
+            raise ValueError(f"Erreur lors de la sauvegarde en base de données: {str(e)}") from e
+
+    def process_reg010(self, pdf_path: str, controle_id: int) -> Tuple[List[Facture], List[Poste]]:
         """Traiter une liste de fichiers REG010"""
-        dataframes = []
-        processed_files = []
 
-        for pdf_path in pdf_files:
-            self.log_info(f"🔄 Traitement de {os.path.basename(pdf_path)}")
-            df = self.extract_data_from_pdf(pdf_path)
+        self.log_info(f"🔄 Traitement de {os.path.basename(pdf_path)}")
+        data = self._extract_data_from_pdf(pdf_path)
+        if data is None:
+            return [], []
+        df_factures, df_postes = self._process_extracted_data(data, pdf_path)
+        if df_factures is None or df_postes is None:
+            self.log_warning(f"Aucune facture ou poste extrait de {os.path.basename(pdf_path)}")
+            return [], []
+        df_factures[SourceColFacture.FICHIER_SOURCE] = os.path.basename(pdf_path)
+        df_postes[SourceColPoste.FICHIER_SOURCE] = os.path.basename(pdf_path)
 
-            if not df.empty:
-                df["fichier_source"] = os.path.basename(pdf_path)
-                dataframes.append(df)
-                processed_files.append(os.path.basename(pdf_path))
+        factures, postes = self._save_to_database(df_factures, df_postes)
 
-        return dataframes, processed_files
+        return factures, postes

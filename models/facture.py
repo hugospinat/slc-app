@@ -4,13 +4,16 @@ from typing import Optional
 import pandas as pd
 from sqlmodel import Field, Relationship, SQLModel
 
+from models.facture_electricite import FactureElectricite
+from models.fournisseur import Fournisseur
+from models.poste import Poste
+
 from .columns import SourceColFacture
 
 
 class Facture(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     poste_id: int = Field(foreign_key="poste.id")
-    nature: str
     numero_facture: str
     code_journal: str
     numero_compte_comptable: str
@@ -28,12 +31,12 @@ class Facture(SQLModel, table=True):
     fournisseur_id: Optional[int] = Field(default=None, foreign_key="fournisseur.id")
 
     # Relations
-    poste: "Poste" = Relationship(back_populates="factures")
-    details_electricite: Optional["FactureElectricite"] = Relationship(back_populates="facture")
-    fournisseur: Optional["Fournisseur"] = Relationship(back_populates="factures")
+    poste: Poste = Relationship(back_populates="factures")
+    details_electricite: Optional[FactureElectricite] = Relationship(back_populates="facture")
+    fournisseur: Optional[Fournisseur] = Relationship(back_populates="factures")
 
     column_map = {
-        "nature": SourceColFacture.NATURE,
+        "poste_id": SourceColFacture.POSTE_ID,
         "numero_facture": SourceColFacture.NUMERO_FACTURE,
         "code_journal": SourceColFacture.CODE_JOURNAL,
         "numero_compte_comptable": SourceColFacture.NUMERO_COMPTE_COMPTABLE,
@@ -45,9 +48,8 @@ class Facture(SQLModel, table=True):
     }
 
     @classmethod
-    def from_df(cls, df: pd.DataFrame, **extra_fields) -> list["Facture"]:
+    def from_df(cls, df: pd.DataFrame) -> list["Facture"]:
+        """Convertir un DataFrame en liste d'objets Facture"""
         rename_map = {enum.value: field for field, enum in cls.column_map.items()}
         df = df.rename(columns=rename_map)
-        for key, value in extra_fields.items():
-            df[key] = value
-        return [cls(**row) for row in df.to_dict(orient="records")]
+        return df.apply(lambda row: cls(**row.to_dict()), axis=1).tolist()  # type: ignore

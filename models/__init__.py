@@ -1,19 +1,16 @@
-from .db import engine, clear_registry, create_db_and_tables
-from .type_facture import TypeFacture
-from .groupe import Groupe
-from .poste import Poste
+from .base_repartition import BaseRepartition
+from .columns import SourceColBaseRep, SourceColFacture, SourceColTantieme
 from .controle_charges import ControleCharges
-from .regle_extraction_champ import RegleExtractionChamp
-from .fournisseur import Fournisseur
+from .db import clear_registry, create_db_and_tables, engine
 from .facture import Facture
 from .facture_electricite import FactureElectricite
+from .facture_pdf import FacturePDF
+from .fournisseur import Fournisseur
+from .groupe import Groupe
+from .poste import Poste
+from .regle_extraction_champ import RegleExtractionChamp
 from .tantieme import Tantieme
-from .base_repartition import BaseRepartition
-from .columns import (
-    SourceColBaseRepartition,
-    SourceColTantieme,
-    SourceColFacture,
-)
+from .type_facture import TypeFacture
 
 __all__ = [
     "engine",
@@ -29,7 +26,8 @@ __all__ = [
     "FactureElectricite",
     "Tantieme",
     "BaseRepartition",
-    "SourceColBaseRepartition",
     "SourceColTantieme",
     "SourceColFacture",
+    "FacturePDF",
+    "SourceColBaseRep",
 ]

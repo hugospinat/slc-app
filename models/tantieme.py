@@ -4,6 +4,7 @@ from typing import Optional
 import pandas as pd
 from sqlmodel import Field, Relationship, SQLModel
 
+from .base_repartition import BaseRepartition
 from .columns import SourceColTantieme
 
 
@@ -22,10 +23,10 @@ class Tantieme(SQLModel, table=True):
     ligne_pdf: int
 
     # Relations
-    base_repartition: "BaseRepartition" = Relationship(back_populates="tantiemes")
+    base_repartition: BaseRepartition = Relationship(back_populates="tantiemes")
 
     column_map = {
-        "base_code": SourceColTantieme.BASE_CODE,
+        "base_repartition_id": SourceColTantieme.BASE_ID,
         "numero_ug": SourceColTantieme.NUMERO_UG,
         "numero_ca": SourceColTantieme.NUMERO_CA,
         "debut_occupation": SourceColTantieme.DEBUT_OCCUPATION,
@@ -37,9 +38,8 @@ class Tantieme(SQLModel, table=True):
     }
 
     @classmethod
-    def from_df(cls, df: pd.DataFrame, base_id_map: dict[str, int]) -> list["Tantieme"]:
+    def from_df(cls, df: pd.DataFrame) -> list["Tantieme"]:
         rename_map = {enum.value: field for field, enum in cls.column_map.items()}
         df = df.rename(columns=rename_map)
-        df["base_repartition_id"] = df.pop("base_code").map(base_id_map)
         df = df[df["base_repartition_id"].notna()].copy()
-        return [cls(**row) for row in df.to_dict(orient="records")]
+        return df.apply(lambda row: cls(**row.to_dict()), axis=1).tolist()  # type: ignore
