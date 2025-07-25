@@ -14,17 +14,12 @@ class SourceColBaseRep(str, Enum):
     CONTROLE_ID = "controle_id"
     CODE = "code"
     NOM = "nom"
-    FICHIER_SOURCE = "fichier_source"
-    LIGNE_PDF = "ligne_pdf"
 
 
 class SourceColPoste(str, Enum):
     CONTROLE_ID = "controle_id"
     NOM = "nom"
     CODE = "code"
-    FICHIER_SOURCE = "fichier_source"
-    LIGNE_PDF = "ligne_pdf"
-    GROUPE_ID = "groupe_id"
 
 
 class SourceColTantieme(str, Enum):
@@ -35,8 +30,6 @@ class SourceColTantieme(str, Enum):
     FIN_OCCUPATION = "fin_occupation"
     TANTIEME = "tantieme"
     RELIQUAT = "reliquat"
-    FICHIER_SOURCE = "fichier_source"
-    LIGNE_PDF = "ligne_pdf"
 
 
 class SourceColFacture(str, Enum):
@@ -47,8 +40,6 @@ class SourceColFacture(str, Enum):
     MONTANT_COMPTABLE = "montant_comptable"
     LIBELLE_ECRITURE = "libelle_ecriture"
     REFERENCES_PARTENAIRE_FACTURE = "references_partenaire_facture"
-    FICHIER_SOURCE = "fichier_source"
-    LIGNE_PDF = "ligne_pdf"
 
 
 class GED001Columns(str, Enum):

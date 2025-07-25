@@ -2,11 +2,10 @@ from typing import TYPE_CHECKING, ClassVar, List, Optional
 
 import pandas as pd
 
-from slc_app.models.columns import SourceColPoste
+from .columns import SourceColPoste
 
 if TYPE_CHECKING:
-    from slc_app.models.facture import Facture
-    from slc_app.models.controle_charges import ControleCharges
+    from slc_app.models import Facture, ControleCharges
 
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -25,6 +24,7 @@ class Poste(SQLModel, table=True):
     factures: List["Facture"] = Relationship(back_populates="poste")
 
     column_map: ClassVar[dict] = {
+        "controle_id": SourceColPoste.CONTROLE_ID,
         "code": SourceColPoste.CODE,
         "nom": SourceColPoste.NOM,
     }

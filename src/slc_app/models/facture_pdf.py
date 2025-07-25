@@ -3,14 +3,16 @@ from typing import TYPE_CHECKING, ClassVar, List, Optional
 import pandas as pd
 from sqlmodel import Field, Relationship, SQLModel
 
-from slc_app.models.columns import GED001Columns
+from .columns import GED001Columns
 
 if TYPE_CHECKING:
-    from slc_app.models.facture import Facture
+    from slc_app.models import Facture
 
 
 class FacturePDF(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    identifiant: Optional[str] = Field(default=None, index=True)  # label pour associé aux factures
+    type: Optional[str] = Field(default=None)
     chemin_fichier: str
     texte_brut: str
 
@@ -19,6 +21,8 @@ class FacturePDF(SQLModel, table=True):
 
     # Mapping des colonnes pour from_df
     column_map: ClassVar[dict] = {
+        "identifiant": GED001Columns.IDENTIFIANT,
+        "type": GED001Columns.TYPE,
         "chemin_fichier": GED001Columns.PATH_TO_PDF_EXTRAIT,
         "texte_brut": GED001Columns.TEXTE_BRUT,
     }

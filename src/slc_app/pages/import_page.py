@@ -41,13 +41,13 @@ def main():
         col1, col2 = st.columns(2)
 
         with col1:
-            groupe_options = {f"{g.nom} ({g.identifiant})": g for g in groupes}
-            selected_groupe = st.selectbox(
+            groupe_options = {f"{g.nom} ({g.identifiant})": g.id for g in groupes}
+            selected_groupe_name = st.selectbox(
                 "Sélectionner un groupe",
                 options=list(groupe_options.keys()),
                 key="groupe_selectbox",
             )
-            groupe = groupe_options[selected_groupe]
+            groupe_id = groupe_options[selected_groupe_name]
 
         with col2:
             current_year = datetime.now().year
@@ -62,7 +62,7 @@ def main():
             )
 
         # Afficher les informations d'import
-        st.info(f"📋 Importation pour: **{selected_groupe}** - Année: **{annee}**")
+        st.info(f"📋 Importation pour: **{selected_groupe_name}** - Année: **{annee}**")
 
         # Upload du fichier ZIP
         uploaded_file = st.file_uploader("Choisir un fichier ZIP", type=["zip"], key="zip_uploader")
@@ -76,9 +76,14 @@ def main():
                         tmp_path = tmp_file.name
 
                     try:
-                        # Traiter le fichier
-                        PHImporter(annee, groupe, tmp_path)
-                        st.success("✅ Fichier traité avec succès!")
+                        # Traiter le fichier en passant l'ID du groupe
+                        if groupe_id is None:
+                            st.error("⚠️ Groupe non sélectionné!")
+                        else:
+                            st.success(f"📤 Fichier ZIP importé: {os.path.basename(tmp_path)}")
+                            st.info("Traitement en cours...")
+                            PHImporter(annee, groupe_id, tmp_path)
+                            st.success("✅ Fichier traité avec succès!")
                     finally:
                         # Nettoyer le fichier temporaire
                         if os.path.exists(tmp_path):

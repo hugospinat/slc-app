@@ -13,10 +13,10 @@ venv/
 ENV/
 
 # Base de données
-charge_control.db
 *.db
 *.sqlite
 *.sqlite3
+data/
 
 # Fichiers temporaires
 uploads/

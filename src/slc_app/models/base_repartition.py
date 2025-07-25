@@ -3,11 +3,10 @@ from typing import TYPE_CHECKING, ClassVar, List, Optional
 import pandas as pd
 from sqlmodel import Field, Relationship, SQLModel
 
-from slc_app.models.columns import SourceColBaseRep
+from .columns import SourceColBaseRep
 
 if TYPE_CHECKING:
-    from slc_app.models.controle_charges import ControleCharges
-    from slc_app.models.tantieme import Tantieme
+    from slc_app.models import ControleCharges, Tantieme
 
 
 class BaseRepartition(SQLModel, table=True):
@@ -17,8 +16,6 @@ class BaseRepartition(SQLModel, table=True):
     controle_id: int = Field(foreign_key="controlecharges.id")
     code: str
     nom: str
-    fichier_source: str
-    ligne_pdf: int
 
     # Relations
 
@@ -29,8 +26,6 @@ class BaseRepartition(SQLModel, table=True):
         "code": SourceColBaseRep.CODE,
         "nom": SourceColBaseRep.NOM,
         "controle_id": SourceColBaseRep.CONTROLE_ID,
-        "fichier_source": SourceColBaseRep.FICHIER_SOURCE,
-        "ligne_pdf": SourceColBaseRep.LIGNE_PDF,
     }
 
     @classmethod

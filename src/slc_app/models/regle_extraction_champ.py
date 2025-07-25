@@ -3,9 +3,9 @@ from typing import TYPE_CHECKING, Optional
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
-    from slc_app.models.fournisseur import Fournisseur
+    from slc_app.models import Fournisseur
 
-from slc_app.models.type_facture import TypeFacture
+from .type_facture import TypeFacture
 
 
 class RegleExtractionChamp(SQLModel, table=True):

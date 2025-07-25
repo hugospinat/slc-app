@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, List, Optional
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
-    from slc_app.models.controle_charges import ControleCharges
+    from slc_app.models import ControleCharges
 
 
 class Groupe(SQLModel, table=True):

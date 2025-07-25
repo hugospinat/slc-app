@@ -1,7 +1,7 @@
 import logging
 from abc import ABC
 
-from utils import logging_config  # noqa: F401
+from slc_app.utils import logging_config  # noqa: F401
 
 
 class BaseProcessor(ABC):

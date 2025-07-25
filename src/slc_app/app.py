@@ -1,10 +1,48 @@
 import logging
 
 import streamlit as st
+from sqlmodel import Session, select
 
 from slc_app.utils import logging_config  # noqa: F401
 
 logger = logging.getLogger(__name__)
+
+
+def run_test_import():
+    """Lancer le test d'importation au démarrage"""
+    try:
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        # Chemin vers le script de test
+        script_path = (
+            Path(__file__).parent.parent.parent / "tests" / "test_import" / "test_import_ph.py"
+        )
+
+        if script_path.exists():
+            logger.info("🧪 Lancement du test d'importation...")
+
+            # Lancer le script de test
+            result = subprocess.run(
+                [sys.executable, str(script_path)],
+                capture_output=True,
+                text=True,
+                cwd=str(script_path.parent.parent.parent),
+            )
+
+            if result.returncode == 0:
+                logger.info("✅ Test d'importation réussi")
+                logger.info(f"📄 Output: {result.stdout}")
+            else:
+                logger.warning("⚠️ Test d'importation échoué")
+                logger.warning(f"📄 Output: {result.stdout}")
+                logger.warning(f"❌ Error: {result.stderr}")
+        else:
+            logger.warning(f"⚠️ Script de test non trouvé: {script_path}")
+
+    except Exception as e:
+        logger.error(f"❌ Erreur lors du lancement du test: {e}")
 
 
 def init_database():
@@ -13,12 +51,9 @@ def init_database():
         logger.info("🔧 Initialisation de la base de données...")
 
         # Importer les modèles pour enregistrer les tables
-        from sqlmodel import Session, select
-
-        import slc_app.models  # noqa: F401
 
         # Importer les fonctions de DB après les modèles
-        from slc_app.models.db import create_db_and_tables, engine
+        from slc_app.models import create_db_and_tables, engine
 
         create_db_and_tables()
         logger.info("✅ Base de données initialisée avec succès")
@@ -29,6 +64,9 @@ def init_database():
 
             groupes_count = len(session.exec(select(Groupe)).all())
             logger.info(f"📊 Groupes existants: {groupes_count}")
+
+        # Lancer le test d'importation automatiquement
+        run_test_import()
 
     except Exception as e:
         logger.error(f"❌ Erreur lors de l'initialisation de la base: {e}")

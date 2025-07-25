@@ -4,12 +4,9 @@ from typing import List, Tuple
 
 import pandas as pd
 import tabula.io as tabula
-from slc_app.models.columns import SourceColFacture, SourceColPoste
-from slc_app.models.db import engine
-from slc_app.models.facture import Facture
-from slc_app.models.poste import Poste
 from sqlmodel import Session
 
+from slc_app.models import Facture, Poste, SourceColFacture, SourceColPoste
 from slc_app.services.importer.ph.base_processor import BaseProcessor
 
 
@@ -82,46 +79,43 @@ class ParserREG010(BaseProcessor):
         # ÉTAPE 1: Filtrer par montants valides
         factures_df = self._filter_by_valid_amounts(combined_df, pdf_path)
 
+        # ETAPE 2: convertir les montants en float
+        factures_df[SourceColFacture.MONTANT_COMPTABLE] = factures_df[
+            SourceColFacture.MONTANT_COMPTABLE
+        ].astype(float)
+
         if factures_df.empty:
             self.log_warning("Aucune ligne avec montant valide trouvée")
             return None, None
 
-        # ÉTAPE 2: Déduplication
-        factures_df = self._remove_duplicates(factures_df)
-
         # ÉTAPE 3: Extension des natures
         factures_df = self._extend_natures(factures_df)
-
-        # ÉTAPE 4: Conversion des montants
-        factures_df[SourceColFacture.MONTANT_COMPTABLE] = (
-            factures_df[SourceColFacture.MONTANT_COMPTABLE].str.replace(",", ".").astype(float)
-        )
-
-        # ÉTAPE 5: Ajouter les métadonnées
-        factures_df[SourceColFacture.FICHIER_SOURCE] = os.path.basename(pdf_path)
-        factures_df[SourceColFacture.LIGNE_PDF] = range(1, len(factures_df) + 1)
-
-        # ÉTAPE 6: Validation finale
-        factures_df = factures_df.dropna(subset=[SourceColFacture.POSTE_ID])
-
-        # ÉTAPE 7: Déduplication finale
-        factures_df = self._final_deduplication(factures_df)
+        factures_df = self._remove_duplicates(factures_df)
 
         # ÉTAPE 8: Extraire les natures uniques
-        natures_uniques = (
+        postes_uniques = (
             factures_df[[SourceColFacture.POSTE_ID]]
             .copy()
             .dropna()
             .drop_duplicates()
             .reset_index(drop=True)
         )
-        natures_uniques.rename(columns={SourceColFacture.POSTE_ID: "nom"}, inplace=True)
-        self.log_info(f"🏷️ {len(natures_uniques)} natures uniques identifiées.")
 
-        # Afficher les résultats finaux
+        # Extraire seulement le code du poste
+        factures_df[SourceColFacture.POSTE_ID] = factures_df[SourceColFacture.POSTE_ID].str.extract(
+            r"([A-Z][A-Z0-9]{1,5}) - "
+        )[0]
+
+        postes_uniques.rename(columns={SourceColFacture.POSTE_ID: "poste"}, inplace=True)
+        self.log_info(f"🏷️ {len(postes_uniques)} postes uniques identifiés.")
+        # Extraire le code et le label à partir de la colonne 'nom' avec le regex
+        df_postes = postes_uniques["poste"].str.extract(r"^([A-Z][A-Z0-9]+) - (.*)$")
+        df_postes.columns = [SourceColPoste.CODE, SourceColPoste.NOM]
+        # Si besoin, garder la colonne source
+
         self._display_final_results(factures_df)
 
-        return factures_df, natures_uniques
+        return factures_df, df_postes
 
     def _filter_by_valid_amounts(self, df: pd.DataFrame, pdf_path: str) -> pd.DataFrame:
         """Filtrer les lignes avec des montants valides"""
@@ -161,7 +155,10 @@ class ParserREG010(BaseProcessor):
         self.log_info("🔧 Suppression des doublons...")
         nb_lignes_avant = len(df)
 
-        df = df.drop_duplicates(subset=["numero_facture", "montant_comptable"], keep="first")
+        df = df.drop_duplicates(
+            subset=[SourceColFacture.NUMERO_FACTURE, SourceColFacture.MONTANT_COMPTABLE],
+            keep="first",
+        )
 
         nb_doublons_supprimes = nb_lignes_avant - len(df)
         if nb_doublons_supprimes > 0:
@@ -176,29 +173,14 @@ class ParserREG010(BaseProcessor):
         self.log_info("🔧 Extension du champ nature...")
 
         # Remplacer les valeurs vides par NaN pour que ffill fonctionne
-        df["nature"] = df["nature"].astype(str)
-        df.loc[df["nature"].isin(["", "nan", "NaN", "None"]), "nature"] = pd.NA
+        df[SourceColFacture.POSTE_ID] = df[SourceColFacture.POSTE_ID].astype(str)
+        df.loc[
+            df[SourceColFacture.POSTE_ID].isin(["", "nan", "NaN", "None"]),
+            SourceColFacture.POSTE_ID,
+        ] = pd.NA
 
         # Forward fill pour étendre les natures
-        df["nature"] = df["nature"].ffill()
-
-        return df
-
-    def _final_deduplication(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Déduplication finale après extension des natures"""
-        nb_lignes_avant = len(df)
-
-        df = df.drop_duplicates(
-            subset=["numero_facture", "montant_comptable", "nature"], keep="first"
-        )
-        df = df.reset_index(drop=True)
-
-        # Recalculer ligne_pdf après déduplication
-        df["ligne_pdf"] = range(1, len(df) + 1)
-
-        nb_doublons_finaux = nb_lignes_avant - len(df)
-        if nb_doublons_finaux > 0:
-            self.log_info(f"⚠️ {nb_doublons_finaux} doublons supprimés après extension des natures")
+        df[SourceColFacture.POSTE_ID] = df[SourceColFacture.POSTE_ID].ffill()
 
         return df
 
@@ -207,21 +189,21 @@ class ParserREG010(BaseProcessor):
         self.log_success(f"Extraction terminée: {len(df)} factures valides uniques")
 
         if not df.empty:
-            natures_trouvees = df["nature"].dropna().unique()
+            natures_trouvees = df[SourceColFacture.POSTE_ID].dropna().unique()
             self.log_info(f"🏷️ Natures identifiées: {list(natures_trouvees)}")
 
-            montant_total = df["montant_comptable"].sum()
+            montant_total = df[SourceColFacture.MONTANT_COMPTABLE].sum()
             self.log_info(f"💰 Montant total: {montant_total:.2f}€")
 
             # Debug: afficher les premières lignes
             self.log_info("📋 Premières lignes validées:")
             for i, row in df.head(3).iterrows():
                 self.log_info(
-                    f"  - Nature: {row[SourceColPoste.NOM]}, Facture: {row[SourceColFacture.NUMERO_FACTURE]}, Montant: {row[SourceColFacture.MONTANT_COMPTABLE]}"
+                    f"  - Nature: {row[SourceColFacture.POSTE_ID]}, Facture: {row[SourceColFacture.NUMERO_FACTURE]}, Montant: {row[SourceColFacture.MONTANT_COMPTABLE]}"
                 )
 
     def _save_to_database(
-        self, df_factures: pd.DataFrame, df_postes: pd.DataFrame
+        self, df_factures: pd.DataFrame, df_postes: pd.DataFrame, session: Session
     ) -> Tuple[List[Facture], List[Poste]]:
         """Sauvegarder les bases de répartition et tantièmes en base de données"""
         if df_factures.empty or df_postes.empty:
@@ -229,32 +211,50 @@ class ParserREG010(BaseProcessor):
                 "❌ Les DataFrames factures ou postes sont vides, impossible de continuer l'import."
             )
         try:
-
             postes = Poste.from_df(df_postes)
 
-            with Session(engine) as session:
-                session.add_all(postes)
-                session.commit()
-                session.refresh(postes)
+            # ARCHITECTURE CENTRALISÉE: Utiliser la session passée en paramètre
+            session.add_all(postes)
+            session.commit()
 
-                poste_id_map = {p.code: p.id for p in postes}
-                df_factures[SourceColFacture.POSTE_ID] = df_factures["code_poste"].map(poste_id_map)
+            # Refresh chaque poste individuellement pour récupérer les IDs
+            for poste in postes:
+                session.refresh(poste)
+                self.log_info(f"✅ Poste sauvegardé: {poste}")
 
-                factures = Facture.from_df(df_factures)
+            # Créer le mapping des codes postes vers leurs IDs APRÈS avoir refreshé tous les postes
+            poste_id_map = {p.code: p.id for p in postes}
+            df_factures[SourceColFacture.POSTE_ID] = df_factures[SourceColFacture.POSTE_ID].map(
+                poste_id_map
+            )
 
-                session.add_all(factures)
-                session.commit()
+            # Créer et sauvegarder les factures
+            factures = Facture.from_df(df_factures)
+            session.add_all(factures)
+            session.commit()
 
-                compteur_postes, compteur_bases = len(postes), len(factures)
-                self.log_info(f"✅ {compteur_postes} postes sauvegardés en base")
-                self.log_info(f"✅ {compteur_bases} factures sauvegardées en base")
+            # Log détaillé de chaque facture créée
+            for facture in factures:
+                session.refresh(facture)
+                self.log_info(
+                    f"📄 Facture créée - ID: {facture.id}, Num: {facture.numero_facture}, "
+                    f"Poste: {facture.poste_id}, Montant: {facture.montant_comptable}€, "
+                    f"Journal: {facture.code_journal}, Compte: {facture.numero_compte_comptable}, "
+                    f"Libellé: {facture.libelle_ecriture}, Ref: {facture.references_partenaire_facture}"
+                )
+
+            compteur_postes, compteur_bases = len(postes), len(factures)
+            self.log_info(f"✅ {compteur_postes} postes sauvegardés en base")
+            self.log_info(f"✅ {compteur_bases} factures sauvegardées en base")
 
             return factures, postes
 
         except Exception as e:
             raise ValueError(f"Erreur lors de la sauvegarde en base de données: {str(e)}") from e
 
-    def process_reg010(self, pdf_path: str, controle_id: int) -> Tuple[List[Facture], List[Poste]]:
+    def process_reg010(
+        self, pdf_path: str, controle_id: int, session: Session
+    ) -> Tuple[List[Facture], List[Poste]]:
         """Traiter une liste de fichiers REG010"""
 
         self.log_info(f"🔄 Traitement de {os.path.basename(pdf_path)}")
@@ -265,9 +265,8 @@ class ParserREG010(BaseProcessor):
         if df_factures is None or df_postes is None:
             self.log_warning(f"Aucune facture ou poste extrait de {os.path.basename(pdf_path)}")
             return [], []
-        df_factures[SourceColFacture.FICHIER_SOURCE] = os.path.basename(pdf_path)
-        df_postes[SourceColPoste.FICHIER_SOURCE] = os.path.basename(pdf_path)
+        df_postes[SourceColPoste.CONTROLE_ID] = controle_id
 
-        factures, postes = self._save_to_database(df_factures, df_postes)
+        factures, postes = self._save_to_database(df_factures, df_postes, session)
 
         return factures, postes

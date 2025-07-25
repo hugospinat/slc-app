@@ -5,10 +5,7 @@ import fitz
 import pandas as pd
 from sqlmodel import Session
 
-from slc_app.models.columns import GED001Columns
-from slc_app.models.db import engine
-from slc_app.models.facture import Facture
-from slc_app.models.facture_pdf import FacturePDF
+from slc_app.models import Facture, FacturePDF, GED001Columns
 from slc_app.services.importer.ph.base_processor import BaseProcessor
 from slc_app.utils.file_storage import save_file
 from slc_app.utils.pdf_utils import extraire_pages_pdf, extraire_texte_brut_pdf
@@ -31,12 +28,12 @@ class ParserGED001(BaseProcessor):
             # Ouvrir le PDF
             doc = fitz.open(ged_file)
 
-            # Variables pour tracker la facture courante
+            # Dictionnaire pour regrouper les pages par identifiant
+            # Structure: {identifiant: {"pages": [num_page1, num_page2, ...], "type": "BONTRV01"}}
+            factures_groupees = {}
             identifiant_courant = None
-            type_courant = None
-            pages_facture_courante = []
 
-            # Parcourir toutes les pages
+            # Première passe: identifier tous les identifiants et leurs pages
             for num_page in range(len(doc)):
                 page = doc.load_page(num_page)
                 texte_page = page.get_textpage().extractText()
@@ -44,46 +41,50 @@ class ParserGED001(BaseProcessor):
                 # Détecter si c'est une nouvelle facture
                 identifiant, type_facture = self._detect_facture_identifiant(texte_page)
 
-                if identifiant:  # Nouvelle facture détectée
-                    # Si on avait une facture en cours, la sauvegarder
-                    if identifiant_courant and pages_facture_courante:
-                        # Extraire le contenu de la facture précédente
-                        contenu_pdf = extraire_pages_pdf(ged_file, pages_facture_courante)
-                        texte_brut = extraire_texte_brut_pdf(contenu_pdf)
+                if identifiant:  # Identifiant détecté sur cette page
+                    self.log_info(
+                        f"[DEBUG] Page {num_page}: Identifiant détecté: {identifiant} - Type: {type_facture}"
+                    )
 
-                        data.append(
-                            {
-                                GED001Columns.IDENTIFIANT: identifiant_courant,
-                                GED001Columns.TYPE: type_courant,
-                                GED001Columns.TEXTE_BRUT: texte_brut,
-                                GED001Columns.CONTENU_PDF: contenu_pdf,  # Pour la sauvegarde ultérieure
-                            }
-                        )
+                    # Créer ou mettre à jour l'entrée pour cet identifiant
+                    if identifiant not in factures_groupees:
+                        factures_groupees[identifiant] = {"pages": [], "type": type_facture}
 
-                    # Commencer une nouvelle facture
+                    factures_groupees[identifiant]["pages"].append(num_page)
                     identifiant_courant = identifiant
-                    type_courant = type_facture
-                    pages_facture_courante = [num_page]
 
                 elif identifiant_courant:
-                    # Page suivante de la facture courante
-                    pages_facture_courante.append(num_page)
+                    # Page sans identifiant, l'ajouter à la facture courante
+                    factures_groupees[identifiant_courant]["pages"].append(num_page)
+                    self.log_info(
+                        f"[DEBUG] Page {num_page} (sans identifiant) ajoutée à la facture {identifiant_courant}"
+                    )
 
-            # Ne pas oublier la dernière facture
-            if identifiant_courant and pages_facture_courante:
-                contenu_pdf = extraire_pages_pdf(ged_file, pages_facture_courante)
+            # Deuxième passe: créer les PDFs groupés pour chaque facture
+            for identifiant, infos in factures_groupees.items():
+                pages_facture = infos["pages"]
+                type_facture = infos["type"]
+
+                self.log_info(
+                    f"[DEBUG] Création PDF pour facture {identifiant} avec {len(pages_facture)} pages: {pages_facture}"
+                )
+
+                # Extraire le contenu PDF pour toutes les pages de cette facture
+                contenu_pdf = extraire_pages_pdf(ged_file, pages_facture)
                 texte_brut = extraire_texte_brut_pdf(contenu_pdf)
 
                 data.append(
                     {
-                        GED001Columns.IDENTIFIANT: identifiant_courant,
-                        GED001Columns.TYPE: type_courant,
+                        GED001Columns.IDENTIFIANT: identifiant,
+                        GED001Columns.TYPE: type_facture,
                         GED001Columns.TEXTE_BRUT: texte_brut,
                         GED001Columns.CONTENU_PDF: contenu_pdf,
                     }
                 )
 
             doc.close()
+
+            self.log_info(f"📊 Extraction terminée: {len(factures_groupees)} factures regroupées")
 
         except Exception as e:
             self.log_error(f"Erreur lors de l'extraction des données du PDF: {e}")
@@ -141,23 +142,67 @@ class ParserGED001(BaseProcessor):
         else:
             return "", ""
 
-    def _save_to_db(self, df: pd.DataFrame, factures: List[Facture]) -> List[FacturePDF]:
+    def _associe_factures_a_pdf(
+        self, factures_pdf: List[FacturePDF], factures: List[Facture], session: Session
+    ) -> None:
+        """
+        Associe les factures à leurs PDF correspondants dans le DataFrame
+        SOLUTION ARCHITECTURALE: Recharger proprement les objets depuis la DB
+        """
+        self.log_info(
+            f"[DEBUG] Association de {len(factures)} factures avec {len(factures_pdf)} PDFs"
+        )
+
+        associations_reussies = 0
+
+        for pdf in factures_pdf:
+            for f in factures:
+                # SOLUTION PROPRE: Recharger la facture depuis la DB dans la session courante
+                # Ceci garantit que l'objet est attaché à la session active
+                facture_attachee = session.get(Facture, f.id)
+
+                if (
+                    facture_attachee
+                    and pdf.identifiant is not None
+                    and pdf.identifiant in facture_attachee.libelle_ecriture
+                ):
+                    facture_attachee.facture_pdf = pdf
+                    associations_reussies += 1
+                    self.log_info(
+                        f"[DEBUG] ✅ Facture {facture_attachee.numero_facture} associée au PDF {pdf.identifiant}"
+                    )
+
+        session.commit()
+        self.log_info(f"📊 Associations réussies: {associations_reussies}/{len(factures)}")
+        return
+
+    def _save_to_db(
+        self, df: pd.DataFrame, factures: List[Facture], session: Session
+    ) -> List[FacturePDF]:
         """
         Enregistrer les factures extraites dans la base de données
+        ARCHITECTURE AMÉLIORÉE: Session passée en paramètre
         """
         factures_pdf = FacturePDF.from_df(df)
-        with Session(engine) as session:
-            session.add_all(factures_pdf)
-            session.commit()
-            session.refresh(factures_pdf)
+        session.add_all(factures_pdf)
+        session.commit()
 
+        # Rafraîchir les PDFs pour avoir leurs IDs
+        for f in factures_pdf:
+            session.refresh(f)
+
+        # Association avec la même session
+        self._associe_factures_a_pdf(factures_pdf, factures, session)
         return factures_pdf
 
     def process_ged001(
-        self, ged_file: str, factures: List[Facture], pdfSavePath: str
+        self, ged_file: str, factures: List[Facture], pdfSavePath: str, session: Session
     ) -> List[FacturePDF]:
-        """Traiter une liste de fichiers GED001"""
+        """
+        Traiter une liste de fichiers GED001
+        ARCHITECTURE AMÉLIORÉE: Session gérée par l'appelant
+        """
         df_data = self._extract_data_from_pdf(ged_file)
         df_processed = self._process_extracted_data(df_data, pdfSavePath)
-        factures_pdf = self._save_to_db(df_processed, factures)
+        factures_pdf = self._save_to_db(df_processed, factures, session)
         return factures_pdf

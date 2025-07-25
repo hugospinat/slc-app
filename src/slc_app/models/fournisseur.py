@@ -3,10 +3,9 @@ from typing import TYPE_CHECKING, List, Optional
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
-    from slc_app.models.facture import Facture
-    from slc_app.models.regle_extraction_champ import RegleExtractionChamp
+    from slc_app.models import Facture, RegleExtractionChamp
 
-from slc_app.models.type_facture import TypeFacture
+from .type_facture import TypeFacture
 
 
 class Fournisseur(SQLModel, table=True):

@@ -4,26 +4,21 @@ from typing import TYPE_CHECKING, ClassVar, Optional
 import pandas as pd
 from sqlmodel import Field, Relationship, SQLModel
 
-from slc_app.models.columns import SourceColFacture
+from .columns import SourceColFacture
 
 if TYPE_CHECKING:
-    from slc_app.models.facture_electricite import FactureElectricite
-    from slc_app.models.facture_pdf import FacturePDF
-    from slc_app.models.fournisseur import Fournisseur
-    from slc_app.models.poste import Poste
+    from slc_app.models import FactureElectricite, FacturePDF, Fournisseur, Poste
 
 
 class Facture(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     poste_id: int = Field(foreign_key="poste.id")
-    numero_facture: str
+    numero_facture: Optional[str] = None
     code_journal: str
     numero_compte_comptable: str
     montant_comptable: float
     libelle_ecriture: str
-    references_partenaire_facture: str
-    fichier_source: str
-    ligne_pdf: int
+    references_partenaire_facture: Optional[str] = None
     statut: str = "en_attente"
     commentaire_contestation: Optional[str] = None
     date_traitement: Optional[datetime] = None
@@ -47,8 +42,6 @@ class Facture(SQLModel, table=True):
         "montant_comptable": SourceColFacture.MONTANT_COMPTABLE,
         "libelle_ecriture": SourceColFacture.LIBELLE_ECRITURE,
         "references_partenaire_facture": SourceColFacture.REFERENCES_PARTENAIRE_FACTURE,
-        "fichier_source": SourceColFacture.FICHIER_SOURCE,
-        "ligne_pdf": SourceColFacture.LIGNE_PDF,
     }
 
     @classmethod
