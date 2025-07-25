@@ -4,13 +4,13 @@ from typing import List, Tuple
 
 import pandas as pd
 import tabula.io as tabula
-from models.columns import SourceColFacture, SourceColPoste
-from models.db import engine
-from models.facture import Facture
-from models.poste import Poste
+from slc_app.models.columns import SourceColFacture, SourceColPoste
+from slc_app.models.db import engine
+from slc_app.models.facture import Facture
+from slc_app.models.poste import Poste
 from sqlmodel import Session
 
-from .base_processor import BaseProcessor
+from slc_app.services.importer.ph.base_processor import BaseProcessor
 
 
 class ParserREG010(BaseProcessor):

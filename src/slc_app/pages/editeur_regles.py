@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 @st.cache_resource
 def import_models():
     """Import des modèles avec cache pour éviter les redéfinitions SQLAlchemy"""
-    from models import Facture, Fournisseur, RegleExtractionChamp, TypeFacture, engine
+    from slc_app.models import Facture, Fournisseur, RegleExtractionChamp, TypeFacture, engine
 
     return Facture, Fournisseur, RegleExtractionChamp, TypeFacture, engine
 
@@ -32,11 +32,11 @@ def obtenir_champs_modele(type_facture: str) -> List[str]:
     """Extrait les noms des champs depuis les modèles SQLModel"""
     # Import dynamique des modèles selon le type
     if type_facture == "electricite":
-        from models import FactureElectricite
+        from slc_app.models import FactureElectricite
 
         modele = FactureElectricite
     elif type_facture == "facture":
-        from models import Facture
+        from slc_app.models import Facture
 
         modele = Facture
     else:

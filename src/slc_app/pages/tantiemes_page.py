@@ -2,7 +2,7 @@ from typing import Dict, List
 
 import pandas as pd
 import streamlit as st
-from models import BaseRepartition, ControleCharges, Groupe, Tantieme, engine
+from slc_app.models import BaseRepartition, ControleCharges, Groupe, Tantieme, engine
 from sqlmodel import Session, select
 
 

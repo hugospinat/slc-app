@@ -4,7 +4,7 @@ import tempfile
 import zipfile
 from typing import List
 
-from .base_processor import BaseProcessor
+from slc_app.services.importer.ph.base_processor import BaseProcessor
 
 
 class ZipProcessor(BaseProcessor):

@@ -3,11 +3,11 @@ from typing import List, Tuple
 
 import pandas as pd
 import tabula.io as tabula
-from models.base_repartition import BaseRepartition
-from models.columns import SourceColBaseRep, SourceColTantieme
-from models.tantieme import Tantieme
+from slc_app.models.base_repartition import BaseRepartition
+from slc_app.models.columns import SourceColBaseRep, SourceColTantieme
+from slc_app.models.tantieme import Tantieme
 
-from .base_processor import BaseProcessor
+from slc_app.services.importer.ph.base_processor import BaseProcessor
 
 
 class ParserREG1114(BaseProcessor):
@@ -153,9 +153,9 @@ class ParserREG1114(BaseProcessor):
             self.log_warning("DataFrames vides, rien à sauvegarder")
             raise ValueError("❌ DataFrames vides, rien à sauvegarder")
         try:
-            from models.base_repartition import BaseRepartition
-            from models.db import engine
-            from models.tantieme import Tantieme
+            from slc_app.models.base_repartition import BaseRepartition
+            from slc_app.models.db import engine
+            from slc_app.models.tantieme import Tantieme
             from sqlmodel import Session
 
             base_objects = BaseRepartition.from_df(base_df, controle_id)

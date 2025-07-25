@@ -7,10 +7,10 @@ from sqlmodel import Field, Relationship, SQLModel
 from slc_app.models.columns import SourceColFacture
 
 if TYPE_CHECKING:
-    from .facture_electricite import FactureElectricite
-    from .facture_pdf import FacturePDF
-    from .fournisseur import Fournisseur
-    from .poste import Poste
+    from slc_app.models.facture_electricite import FactureElectricite
+    from slc_app.models.facture_pdf import FacturePDF
+    from slc_app.models.fournisseur import Fournisseur
+    from slc_app.models.poste import Poste
 
 
 class Facture(SQLModel, table=True):

@@ -11,11 +11,11 @@ def init_database():
     try:
         logger.info("🔧 Initialisation de la base de données...")
 
-        # Importer tous les modèles via le __init__.py centralisé
-        import models  # noqa: F401
+        # Importer les modèles pour enregistrer les tables
+        import slc_app.models  # noqa: F401
 
         # Importer les fonctions de DB après les modèles
-        from models.db import create_db_and_tables, engine
+        from slc_app.models.db import create_db_and_tables, engine
         from sqlmodel import Session, select
 
         create_db_and_tables()
@@ -23,7 +23,7 @@ def init_database():
 
         # Vérifier la connexion
         with Session(engine) as session:
-            from models import Groupe
+            from slc_app.models import Groupe
 
             groupes_count = len(session.exec(select(Groupe)).all())
             logger.info(f"📊 Groupes existants: {groupes_count}")

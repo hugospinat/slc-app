@@ -3,10 +3,10 @@ from typing import TYPE_CHECKING, ClassVar, List, Optional
 import pandas as pd
 from sqlmodel import Field, Relationship, SQLModel
 
-from .columns import GED001Columns
+from slc_app.models.columns import GED001Columns
 
 if TYPE_CHECKING:
-    from .facture import Facture
+    from slc_app.models.facture import Facture
 
 
 class FacturePDF(SQLModel, table=True):

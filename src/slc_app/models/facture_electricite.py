@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Optional
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
-    from .facture import Facture
+    from slc_app.models.facture import Facture
 
 
 class FactureElectricite(SQLModel, table=True):
