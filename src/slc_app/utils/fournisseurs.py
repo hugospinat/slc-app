@@ -4,7 +4,7 @@ from typing import Dict, Optional
 from sqlmodel import Session, select
 
 from slc_app.models import Fournisseur, engine
-from src.slc_app.utils import logging_config  # noqa: F401
+from slc_app.utils import logging_config  # noqa: F401
 
 
 def detecter_fournisseur(row_data: Dict) -> Optional[int]:

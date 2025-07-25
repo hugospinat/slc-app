@@ -1,7 +1,8 @@
 import logging
 
 import streamlit as st
-from utils import logging_config  # noqa: F401
+
+from slc_app.utils import logging_config  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -12,11 +13,12 @@ def init_database():
         logger.info("🔧 Initialisation de la base de données...")
 
         # Importer les modèles pour enregistrer les tables
+        from sqlmodel import Session, select
+
         import slc_app.models  # noqa: F401
 
         # Importer les fonctions de DB après les modèles
         from slc_app.models.db import create_db_and_tables, engine
-        from sqlmodel import Session, select
 
         create_db_and_tables()
         logger.info("✅ Base de données initialisée avec succès")

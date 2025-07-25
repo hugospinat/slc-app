@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, ClassVar, List, Optional
 
 import pandas as pd
 
@@ -24,7 +24,7 @@ class Poste(SQLModel, table=True):
     controle: "ControleCharges" = Relationship(back_populates="postes")
     factures: List["Facture"] = Relationship(back_populates="poste")
 
-    column_map = {
+    column_map: ClassVar[dict] = {
         "code": SourceColPoste.CODE,
         "nom": SourceColPoste.NOM,
     }

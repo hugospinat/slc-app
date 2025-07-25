@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlmodel import Session
 
 from slc_app.models import Facture, engine
-from utils import logging_config  # noqa: F401
+from slc_app.utils import logging_config  # noqa: F401
 
 logger = logging.getLogger(__name__)
 

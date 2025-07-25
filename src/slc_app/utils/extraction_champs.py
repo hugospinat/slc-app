@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 from sqlmodel import Session, select
 
 from slc_app.models import Facture, FactureElectricite, RegleExtractionChamp, engine
-from utils import logging_config  # noqa: F401
+from slc_app.utils import logging_config  # noqa: F401
 
 # Utilise le logger global configuré ailleurs
 logger = logging.getLogger(__name__)

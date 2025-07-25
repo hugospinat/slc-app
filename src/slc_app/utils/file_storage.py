@@ -1,6 +1,6 @@
 import os
 
-from src.slc_app.utils.settings import BASE_STORAGE_DIR
+from slc_app.utils.settings import BASE_STORAGE_DIR
 
 
 def save_file(content: bytes, subdirectory: str, filename: str) -> str:
