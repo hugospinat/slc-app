@@ -6,10 +6,12 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/.venv/Scripts/streamlit.exe",
-            "args": ["run", "app.py"],
+            "args": ["run", "src/slc_app/app.py"],  // <== Chemin vers ton app Streamlit
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
-            "env": {}
+            "env": {
+                "PYTHONPATH": "src"
+            }
         },
         {
             "name": "Python: Current File",
@@ -18,6 +20,9 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "src"
+            },
             "justMyCode": true
         }
     ]

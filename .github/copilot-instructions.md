@@ -59,3 +59,72 @@ Merci d'utiliser exclusivement SQLModel pour les modèles de données et les req
 
 - Favoriser les `@classmethod` pour les méthodes d’import depuis DataFrame
 - Utiliser des `Enum` pour les colonnes sources (éviter les chaînes brutes)
+
+## Organisation du code
+
+src/slc_app/
+├── models/
+│ ├── init.py
+│ ├── base.py
+│ ├── facture.py
+│ ├── facture_etendue.py
+│ ├── tantieme.py
+│ └── ...
+│
+├── services/
+│ ├── init.py
+│ ├── import/
+│ │ ├── init.py
+│ │ ├── ph/
+│ │ │ ├── init.py
+│ │ │ ├── importer.py
+│ │ │ ├── parser_reg010.py
+│ │ │ ├── parser_reg114.py
+│ │ │ └── parser_ged001.py
+│ │ └── rivp/
+│ │ ├── init.py
+│ │ ├── importer.py
+│ │ ├── parser_csv.py
+│ │ └── parser_excel.py
+│ │
+│ ├── export/
+│ │ ├── init.py
+│ │ ├── export_excel.py
+│ │ └── export_zip.py
+│ │
+│ ├── rules/
+│ │ ├── init.py
+│ │ ├── rule_engine.py
+│ │ ├── validators.py
+│ │ └── context_builder.py
+│ │
+│ └── common/
+│ ├── init.py
+│ ├── file_storage.py
+│ └── extraction_utils.py
+│
+├── pages/
+│ ├── init.py
+│ ├── dashboard.py
+│ ├── import_page.py
+│ ├── validation_page.py
+│ └── rapport_page.py
+│
+├── utils/
+│ ├── init.py
+│ ├── log.py
+│ └── settings.py
+│
+└── app.py
+tests/
+├── data/
+│ └── 113RU.zip
+└── test_import/
+│ ├── test_paris_habitat.py
+│ └── test_ricp.py
+
+README.md
+copilot-instruction.md
+pyproject.toml
+requirements.txt
+.gitignore

@@ -96,3 +96,29 @@ Merci d'utiliser exclusivement SQLModel pour les modèles de données et les req
 
 - Favoriser les `@classmethod` pour les méthodes d’import depuis DataFrame
 - Utiliser des `Enum` pour les colonnes sources (éviter les chaînes brutes)
+
+## 🔧 Tâche à faire plus tard : Refactorisation de l'import des modèles
+
+Objectif : séparer proprement la logique métier d'importation (`from_df`) des définitions de modèles SQLModel.
+
+---
+
+### 📌 Étapes à réaliser
+
+- [ ] Créer un fichier `import_facture.py` dans `services/import/paris_habitat/`
+- [ ] Déplacer la méthode `from_df()` du modèle `Facture` vers ce fichier
+- [ ] Créer une classe `FactureImporter` avec :
+  - [ ] Un attribut `column_map`
+  - [ ] Une méthode `from_df(df: pd.DataFrame) -> list[Facture]`
+- [ ] Déplacer l’`Enum` `SourceColFacture` dans ce même fichier (au lieu de le garder dans `utils.enums`)
+- [ ] Supprimer `column_map` du modèle `Facture` si elle n’est plus utilisée ailleurs
+- [ ] Mettre à jour tous les appels à `Facture.from_df(...)` → `FactureImporter.from_df(...)`
+- [ ] Répliquer cette architecture pour les autres modèles (`Tantieme`, `BaseRepartition`, etc.)
+
+---
+
+### ✅ Avantages
+
+- Respect du principe de séparation des responsabilités (modèle vs logique métier)
+- Possibilité de gérer plusieurs sources d’import (ex : Paris Habitat, RICP) avec des importeurs dédiés
+- Plus simple à tester, maintenir et faire évoluer
