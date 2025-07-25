@@ -5,9 +5,9 @@ import pandas as pd
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
-    from .base_repartition import BaseRepartition
+    from slc_app.models.base_repartition import BaseRepartition
 
-from .columns import SourceColTantieme
+from slc_app.models.columns import SourceColTantieme
 
 
 class Tantieme(SQLModel, table=True):

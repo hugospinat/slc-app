@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 @st.cache_resource
 def import_models():
     """Import des modèles avec cache pour éviter les redéfinitions SQLAlchemy"""
-    from models import Groupe, engine
+    from slc_app.models import Groupe, engine
 
     return Groupe, engine
 

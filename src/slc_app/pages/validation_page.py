@@ -11,7 +11,7 @@ from utils.postes import update_rapport_poste
 @st.cache_resource
 def import_models():
     """Import des modèles avec cache pour éviter les redéfinitions SQLAlchemy"""
-    from models import ControleCharges, Facture, Groupe, Poste, engine
+    from slc_app.models import ControleCharges, Facture, Groupe, Poste, engine
 
     return ControleCharges, Facture, Groupe, Poste, engine
 

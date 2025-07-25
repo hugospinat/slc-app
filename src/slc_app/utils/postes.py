@@ -2,7 +2,7 @@ import logging
 
 from sqlmodel import Session
 
-from src.slc_app.models import Poste, engine
+from slc_app.models import Poste, engine
 from src.slc_app.utils import logging_config  # noqa: F401
 
 logger = logging.getLogger(__name__)

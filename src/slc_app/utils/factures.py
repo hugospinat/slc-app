@@ -3,7 +3,7 @@ from datetime import datetime
 
 from sqlmodel import Session
 
-from models import Facture, engine
+from slc_app.models import Facture, engine
 from utils import logging_config  # noqa: F401
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,9 @@ def update_facture_commentaire(facture_id: int, nouveau_commentaire: str):
         with Session(engine) as session:
             facture = session.get(Facture, facture_id)
             if facture:
-                facture.commentaire_contestation = nouveau_commentaire if nouveau_commentaire else None
+                facture.commentaire_contestation = (
+                    nouveau_commentaire if nouveau_commentaire else None
+                )
                 facture.date_traitement = datetime.now()
                 session.add(facture)
                 session.commit()

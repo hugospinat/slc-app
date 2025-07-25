@@ -3,11 +3,11 @@ from typing import TYPE_CHECKING, ClassVar, List, Optional
 import pandas as pd
 from sqlmodel import Field, Relationship, SQLModel
 
-from .columns import SourceColBaseRep
+from slc_app.models.columns import SourceColBaseRep
 
 if TYPE_CHECKING:
-    from .controle_charges import ControleCharges
-    from .tantieme import Tantieme
+    from slc_app.models.controle_charges import ControleCharges
+    from slc_app.models.tantieme import Tantieme
 
 
 class BaseRepartition(SQLModel, table=True):

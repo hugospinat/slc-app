@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 
 from sqlmodel import Session, select
 
-from models import Facture, FactureElectricite, RegleExtractionChamp, engine
+from slc_app.models import Facture, FactureElectricite, RegleExtractionChamp, engine
 from utils import logging_config  # noqa: F401
 
 # Utilise le logger global configuré ailleurs
@@ -42,25 +42,35 @@ def extraire_champs_automatiques(facture_id: int) -> Dict[str, Any]:
             )
         ).all()
 
-        logger.debug(f"{len(regles)} règle(s) active(s) trouvée(s) pour fournisseur_id={facture.fournisseur_id}")
+        logger.debug(
+            f"{len(regles)} règle(s) active(s) trouvée(s) pour fournisseur_id={facture.fournisseur_id}"
+        )
 
         resultats = {}
 
         for regle in regles:
             try:
-                logger.debug(f"Test règle id={regle.id} champ={regle.champ_cible} regex={regle.regex_extraction}")
+                logger.debug(
+                    f"Test règle id={regle.id} champ={regle.champ_cible} regex={regle.regex_extraction}"
+                )
                 # Appliquer la regex au texte brut
-                match = re.search(regle.regex_extraction, facture.texte_brut_pdf, re.IGNORECASE | re.MULTILINE)
+                match = re.search(
+                    regle.regex_extraction, facture.texte_brut_pdf, re.IGNORECASE | re.MULTILINE
+                )
 
                 if match:
                     valeur = match.group(1) if match.groups() else match.group(0)
-                    logger.info(f"Extraction OK: {regle.table_cible.value}.{regle.champ_cible} = {valeur}")
+                    logger.info(
+                        f"Extraction OK: {regle.table_cible.value}.{regle.champ_cible} = {valeur}"
+                    )
 
                     # Organiser par table cible
                     if regle.table_cible.value not in resultats:
                         resultats[regle.table_cible.value] = {}
 
-                    resultats[regle.table_cible.value][regle.champ_cible] = _convertir_valeur(valeur, regle.champ_cible)
+                    resultats[regle.table_cible.value][regle.champ_cible] = _convertir_valeur(
+                        valeur, regle.champ_cible
+                    )
                 else:
                     logger.debug(f"Pas de match pour règle id={regle.id} ({regle.champ_cible})")
             except re.error as e:
@@ -121,7 +131,9 @@ def appliquer_extractions_automatiques(facture_id: int) -> bool:
         return False
 
     with Session(engine) as session:
-        logger.debug(f"Ouverture session pour appliquer_extractions_automatiques sur facture_id={facture_id}")
+        logger.debug(
+            f"Ouverture session pour appliquer_extractions_automatiques sur facture_id={facture_id}"
+        )
         facture = session.get(Facture, facture_id)
         if not facture:
             logger.error(f"Facture id={facture_id} introuvable.")
@@ -131,7 +143,9 @@ def appliquer_extractions_automatiques(facture_id: int) -> bool:
 
         # Mettre à jour la table facture
         if "facture" in extractions:
-            logger.debug(f"Extraction de champs pour table 'facture': {list(extractions['facture'].keys())}")
+            logger.debug(
+                f"Extraction de champs pour table 'facture': {list(extractions['facture'].keys())}"
+            )
             for champ, valeur in extractions["facture"].items():
                 if hasattr(facture, champ) and valeur is not None:
                     logger.info(f"MAJ Facture: {champ} = {valeur}")
@@ -142,7 +156,9 @@ def appliquer_extractions_automatiques(facture_id: int) -> bool:
 
         # Mettre à jour la table facture_electricite
         if "electricite" in extractions:
-            logger.debug(f"Extraction de champs pour table 'electricite': {list(extractions['electricite'].keys())}")
+            logger.debug(
+                f"Extraction de champs pour table 'electricite': {list(extractions['electricite'].keys())}"
+            )
             details_elec = session.exec(
                 select(FactureElectricite).where(FactureElectricite.facture_id == facture_id)
             ).first()
@@ -154,7 +170,9 @@ def appliquer_extractions_automatiques(facture_id: int) -> bool:
                         setattr(details_elec, champ, valeur)
                         modifications = True
                     else:
-                        logger.debug(f"Champ '{champ}' non trouvé ou valeur None pour FactureElectricite.")
+                        logger.debug(
+                            f"Champ '{champ}' non trouvé ou valeur None pour FactureElectricite."
+                        )
             else:
                 logger.debug(f"Aucun détail FactureElectricite trouvé pour facture_id={facture_id}")
 

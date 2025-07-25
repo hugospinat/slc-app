@@ -3,8 +3,8 @@ from typing import TYPE_CHECKING, List, Optional
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
-    from .facture import Facture
-    from .regle_extraction_champ import RegleExtractionChamp
+    from slc_app.models.facture import Facture
+    from slc_app.models.regle_extraction_champ import RegleExtractionChamp
 
 from slc_app.models.type_facture import TypeFacture
 

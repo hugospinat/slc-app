@@ -2,11 +2,11 @@ from typing import TYPE_CHECKING, List, Optional
 
 import pandas as pd
 
-from .columns import SourceColPoste
+from slc_app.models.columns import SourceColPoste
 
 if TYPE_CHECKING:
-    from .facture import Facture
-    from .controle_charges import ControleCharges
+    from slc_app.models.facture import Facture
+    from slc_app.models.controle_charges import ControleCharges
 
 from sqlmodel import Field, Relationship, SQLModel
 

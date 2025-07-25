@@ -3,9 +3,9 @@ from typing import TYPE_CHECKING, List, Optional
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
-    from .base_repartition import BaseRepartition
-    from .groupe import Groupe
-    from .poste import Poste
+    from slc_app.models.base_repartition import BaseRepartition
+    from slc_app.models.groupe import Groupe
+    from slc_app.models.poste import Poste
 
 
 class ControleCharges(SQLModel, table=True):
