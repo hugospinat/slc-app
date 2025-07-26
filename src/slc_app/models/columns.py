@@ -42,6 +42,26 @@ class SourceColFacture(str, Enum):
     REFERENCES_PARTENAIRE_FACTURE = "references_partenaire_facture"
 
 
+class SourceColPosteReleve(str, Enum):
+    CONTROLE_ID = "controle_id"
+    NOM = "nom"
+
+
+class SourceColReleveIndividuel(str, Enum):
+    POSTE_RELEVE_ID = "poste_releve_id"
+    NUMERO_UG = "numero_ug"
+    NATURE_UG = "nature_ug"
+    NUMERO_CA = "numero_ca"
+    POINT_COMPTAGE = "point_comptage"
+    NUMERO_SERIE_COMPTEUR = "numero_serie_compteur"
+    DATE_RELEVE = "date_releve"
+    DATE_VALEUR = "date_valeur"
+    TYPE_RELEVE = "type_releve"
+    OBSERVATIONS = "observations"
+    INDEX = "index"
+    EVOLUTION_INDEX = "evolution_index"
+
+
 class GED001Columns(str, Enum):
     """Colonnes du DataFrame pour les données GED001"""
 

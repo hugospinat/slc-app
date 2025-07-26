@@ -5,8 +5,11 @@
             "name": "Run Streamlit App",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/.venv/Scripts/streamlit.exe",
-            "args": ["run", "src/slc_app/app.py"],  // <== Chemin vers ton app Streamlit
+            "program": "${workspaceFolder}/.venv/bin/streamlit",
+            "args": [
+                "run",
+                "src/slc_app/app.py"
+            ], // <== Chemin vers ton app Streamlit
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "env": {

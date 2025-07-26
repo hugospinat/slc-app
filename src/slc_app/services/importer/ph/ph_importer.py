@@ -2,6 +2,7 @@ from sqlmodel import Session
 
 from slc_app.models import ControleCharges, Groupe, engine
 from slc_app.services.importer.ph.base_processor import BaseProcessor
+from slc_app.services.importer.ph.eau008c_parser import ParserEAU008C
 from slc_app.services.importer.ph.ged001_parser import ParserGED001
 from slc_app.services.importer.ph.reg010_parser import ParserREG010
 from slc_app.services.importer.ph.reg114_parser import ParserREG114
@@ -20,6 +21,7 @@ class PHImporter(BaseProcessor):
         self.reg010_parser = ParserREG010()
         self.reg114_parser = ParserREG114()
         self.ged001_parser = ParserGED001()
+        self.eau008c_parser = ParserEAU008C()
 
         self.annee = annee
         self.groupe_id = groupe_id
@@ -56,10 +58,11 @@ class PHImporter(BaseProcessor):
             # Extraire le ZIP (pas besoin de session)
             self.zip_processor.extract_zip(self.path_to_zip)
 
-            # Trouver les fichiers REG010, REG114 et GED001 (pas besoin de session)
+            # Trouver les fichiers REG010, REG114, GED001 et EAU008C (pas besoin de session)
             reg010 = self.zip_processor.find_unique_pattern_pdfs("REG010")
             reg114 = self.zip_processor.find_unique_pattern_pdfs("REG114")
             ged001 = self.zip_processor.find_unique_pattern_pdfs("GED001")
+            eau008c = self.zip_processor.find_unique_pattern_pdfs("EAU008C")
 
             # Traiter les fichiers REG010
             cdc_path = f"{self.controle_charges.annee}/{self.controle_charges.groupe.identifiant}"
@@ -95,6 +98,14 @@ class PHImporter(BaseProcessor):
                 )
                 self.log_info(f"📊 Tantièmes extraits: {len(tantiemes)}")
                 self.log_info(f"📊 Bases de répartition extraites: {len(bases_repartition)}")
+
+            # Traiter les fichiers EAU008C avec la même session
+            if eau008c:
+                releves, postes_releve = self.eau008c_parser.process_eau008c(
+                    eau008c, self.controle_charges.id, cdc_path, session
+                )
+                self.log_info(f"📊 Relevés individuels extraits: {len(releves)}")
+                self.log_info(f"📊 Postes de relevé extraits: {len(postes_releve)}")
 
         except Exception as e:
             self.log_error(f"Erreur lors du traitement du ZIP: {e}")
