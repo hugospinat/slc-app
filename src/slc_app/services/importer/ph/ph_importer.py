@@ -1,9 +1,10 @@
+import os
 from slc_app.utils.logger import logger
 from slc_app.utils.logger import logger
 from sqlmodel import Session
-from typing import List, Tuple, Optional, Any
+from typing import Dict, List, Tuple, Optional, Any
 
-from slc_app.models import ControleCharges, Groupe, engine
+from slc_app.models import ControleCharges, Groupe, engine, FacturePDF, Facture
 from slc_app.services.importer.ph.eau008c_parser import process_eau008c
 from slc_app.services.importer.ph.ged001_parser import ParserGED001
 from slc_app.services.importer.ph.reg010_parser import process_reg010
@@ -58,7 +59,7 @@ def save_all_pdfs(pdf_files: dict, base_path: str) -> None:
             save_file_from_path(pdf_files[key], path)
 
 
-def create_controle_charges(annee: int, groupe_id: int) -> Tuple[ControleCharges, str]:
+def create_controle_charges(annee: int, groupe_id: int) -> Tuple[ControleCharges, Groupe]:
     """Crée le contrôle des charges avec gestion d'erreur et retourne aussi l'identifiant du groupe"""
     with Session(engine) as session:
         groupe = session.get(Groupe, groupe_id)
@@ -75,11 +76,9 @@ def create_controle_charges(annee: int, groupe_id: int) -> Tuple[ControleCharges
         session.add(controle_charges)
         session.commit()
         session.refresh(controle_charges)
+        session.refresh(groupe)
 
-        # Récupérer l'identifiant du groupe avant de fermer la session
-        groupe_identifiant = groupe.identifiant
-
-        return controle_charges, groupe_identifiant
+    return controle_charges, groupe
 
 
 def importer_ph(annee: int, groupe_id: int, path_to_zip: str) -> None:
@@ -91,11 +90,13 @@ def importer_ph(annee: int, groupe_id: int, path_to_zip: str) -> None:
 
     # Créer le contrôle des charges
     try:
-        controle_charges, groupe_identifiant = create_controle_charges(annee, groupe_id)
+        controle_charges, groupe = create_controle_charges(annee, groupe_id)
     except Exception as e:
         logger.error(f"Erreur lors de la création du contrôle des charges: {e}")
         raise e
 
+    cdc_path = f"CdC/{annee}/{groupe.identifiant}"
+    factures_path = f"{cdc_path}/factures"
     logger.info(f"Début du traitement du fichier ZIP: {path_to_zip}")
 
     try:
@@ -117,9 +118,6 @@ def importer_ph(annee: int, groupe_id: int, path_to_zip: str) -> None:
             raise ValueError(
                 "L'identifiant du contrôle des charges est None, impossible de poursuivre l'import."
             )
-
-        # Chemin de sauvegarde
-        cdc_path = f"{controle_charges.annee}/{groupe_identifiant}"
 
         # Liste centralisée pour tous les objets à sauvegarder
         obj_to_save = []
@@ -151,27 +149,17 @@ def importer_ph(annee: int, groupe_id: int, path_to_zip: str) -> None:
             "EAU008C (Relevés/Postes)",
         )
 
+        if pdf_files["ged001"]:
+            dict_pdfs = ged001_parser.process_ged001(pdf_files["ged001"])
+            save_pdfs_factures(dict_pdfs, factures_path)
+            factures_pdf = [pdf for pdf, _ in dict_pdfs]
+            associe_factures_a_pdf(factures_pdf, factures)
+            obj_to_save.extend(factures_pdf)
+        else:
+            factures_pdf = []
+
         # SAUVEGARDE CENTRALISÉE
-        try:
-            with Session(engine) as session:
-                # Sauvegarder tous les objets d'un coup
-                session.add_all(obj_to_save)
-
-                # Traiter GED001 (garde sa logique actuelle)
-                if pdf_files["ged001"]:
-                    factures_path = f"{cdc_path}/factures"
-                    factures_pdf = ged001_parser.process_ged001(
-                        pdf_files["ged001"], factures, factures_path, session
-                    )
-                    logger.info(f"📊 PDFs facture extraits: {len(factures_pdf)}")
-
-                session.commit()
-                logger.info("✅ Toutes les données sauvegardées avec succès")
-
-        except Exception as e:
-            logger.error(f"Erreur lors de la sauvegarde: {e}")
-            raise e
-
+        save_to_db(obj_to_save)
         # Sauvegarder les PDFs
         save_all_pdfs(pdf_files, cdc_path)
 
@@ -181,4 +169,42 @@ def importer_ph(annee: int, groupe_id: int, path_to_zip: str) -> None:
     finally:
         zip_processor.cleanup_directory()
 
+    return
+
+
+def save_to_db(obj_to_save: List[Any]) -> None:
+    """Sauvegarde centralisée de tous les objets avec les FacturePDF"""
+    try:
+        with Session(engine) as session:
+            # Ajouter les FacturePDF à la liste
+            session.add_all(obj_to_save)
+            session.commit()
+            logger.info("✅ Toutes les données sauvegardées avec succès")
+    except Exception as e:
+        logger.error(f"Erreur lors de la sauvegarde: {e}")
+        raise e
+
+
+def save_pdfs_factures(dict_pdfs: List[Tuple[FacturePDF, bytes]], factures_path: str) -> None:
+    """
+    Sauvegarde les FacturePDFs dans le répertoire spécifié.
+    """
+    for facture_pdf, pdf_content in dict_pdfs:
+        filename = f"{facture_pdf.identifiant}_{facture_pdf.type}.pdf"
+        facture_pdf.chemin_fichier = save_file_from_path(pdf_content, factures_path, filename)
+        logger.info(f"📄 PDF sauvegardé: {filename}")
+
+
+def associe_factures_a_pdf(factures_pdf: List[FacturePDF], factures: List[Facture]) -> None:
+    """
+    Associe les FacturePDFs aux factures correspondantes.
+    """
+    associations_reussies = 0
+    for f in factures:
+        for pdf in factures_pdf:
+            if pdf.identifiant in f.libelle_ecriture:
+                f.pdf = pdf
+                associations_reussies += 1
+                logger.info(f"📄 PDF associé à la facture {f.libelle_ecriture}")
+    logger.info(f"📊 Associations réussies: {associations_reussies}/{len(factures)}")
     return

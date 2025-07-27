@@ -1,5 +1,4 @@
 from .base_repartition import BaseRepartition
-from .columns import GED001Columns
 from .controle_charges import ControleCharges
 from .db import clear_registry, create_db_and_tables, engine
 from .facture import Facture
@@ -16,7 +15,6 @@ from .type_facture import TypeFacture
 
 __all__ = [
     "BaseRepartition",
-    "GED001Columns",
     "ControleCharges",
     "Facture",
     "FactureElectricite",
