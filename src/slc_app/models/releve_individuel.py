@@ -1,14 +1,11 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, ClassVar, Optional
+from typing import TYPE_CHECKING, Optional
 
-import pandas as pd
 from pydantic import field_validator
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
     from slc_app.models import PosteReleve
-
-from .columns import SourceColReleveIndividuel
 
 
 class ReleveIndividuel(SQLModel, table=True):
@@ -77,25 +74,3 @@ class ReleveIndividuel(SQLModel, table=True):
                 return None
 
         return None
-
-    column_map: ClassVar[dict] = {
-        "poste_releve_id": SourceColReleveIndividuel.POSTE_RELEVE_ID,
-        "numero_ug": SourceColReleveIndividuel.NUMERO_UG,
-        "nature_ug": SourceColReleveIndividuel.NATURE_UG,
-        "numero_ca": SourceColReleveIndividuel.NUMERO_CA,
-        "point_comptage": SourceColReleveIndividuel.POINT_COMPTAGE,
-        "numero_serie_compteur": SourceColReleveIndividuel.NUMERO_SERIE_COMPTEUR,
-        "date_releve": SourceColReleveIndividuel.DATE_RELEVE,
-        "date_valeur": SourceColReleveIndividuel.DATE_VALEUR,
-        "type_releve": SourceColReleveIndividuel.TYPE_RELEVE,
-        "observations": SourceColReleveIndividuel.OBSERVATIONS,
-        "index_releve": SourceColReleveIndividuel.INDEX,
-        "evolution_index": SourceColReleveIndividuel.EVOLUTION_INDEX,
-    }
-
-    @classmethod
-    def from_df(cls, df: pd.DataFrame) -> list["ReleveIndividuel"]:
-        rename_map = {enum.value: field for field, enum in cls.column_map.items()}
-        df = df.rename(columns=rename_map)
-        df = df[df["poste_releve_id"].notna()].copy()
-        return df.apply(lambda row: cls.model_validate(row.to_dict()), axis=1).tolist()  # type: ignore

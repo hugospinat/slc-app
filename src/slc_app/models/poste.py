@@ -1,8 +1,4 @@
-from typing import TYPE_CHECKING, ClassVar, List, Optional
-
-import pandas as pd
-
-from .columns import SourceColPoste
+from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
     from slc_app.models import Facture, ControleCharges
@@ -22,16 +18,3 @@ class Poste(SQLModel, table=True):
     # Relations
     controle: "ControleCharges" = Relationship(back_populates="postes")
     factures: List["Facture"] = Relationship(back_populates="poste")
-
-    column_map: ClassVar[dict] = {
-        "controle_id": SourceColPoste.CONTROLE_ID,
-        "code": SourceColPoste.CODE,
-        "nom": SourceColPoste.NOM,
-    }
-
-    @classmethod
-    def from_df(cls, df: pd.DataFrame) -> list["Poste"]:
-        """Convertir un DataFrame en liste d'objets Poste"""
-        rename_map = {enum.value: field for field, enum in cls.column_map.items()}
-        df = df.rename(columns=rename_map)
-        return df.apply(lambda row: cls(**row.to_dict()), axis=1).tolist()  # type: ignore

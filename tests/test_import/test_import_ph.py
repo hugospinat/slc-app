@@ -28,7 +28,7 @@ def test_import_ph():
         from sqlmodel import Session
 
         from slc_app.models import ControleCharges, FacturePDF, Groupe, engine
-        from slc_app.services.importer.ph.ph_importer import PHImporter
+        from slc_app.services.importer.ph.ph_importer import importer_ph
 
         print("[OK] Modules importés avec succès")
 
@@ -72,7 +72,7 @@ def test_import_ph():
             print(f"   - Groupe ID: {groupe_id}")
             print(f"   - Fichier: {tmp_zip}")
 
-            PHImporter(annee, groupe_id, str(tmp_zip))
+            importer_ph(annee, groupe_id, str(tmp_zip))
 
             print("[OK] Importation terminée avec succès!")
 

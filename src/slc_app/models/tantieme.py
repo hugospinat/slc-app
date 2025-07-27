@@ -1,14 +1,11 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, ClassVar, Optional
+from typing import TYPE_CHECKING, Optional
 
-import pandas as pd
 from pydantic import field_validator
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
     from slc_app.models import BaseRepartition
-
-from .columns import SourceColTantieme
 
 
 class Tantieme(SQLModel, table=True):
@@ -53,20 +50,3 @@ class Tantieme(SQLModel, table=True):
                         return None
 
         return None
-
-    column_map: ClassVar[dict] = {
-        "base_repartition_id": SourceColTantieme.BASE_ID,
-        "numero_ug": SourceColTantieme.NUMERO_UG,
-        "numero_ca": SourceColTantieme.NUMERO_CA,
-        "debut_occupation": SourceColTantieme.DEBUT_OCCUPATION,
-        "fin_occupation": SourceColTantieme.FIN_OCCUPATION,
-        "tantieme": SourceColTantieme.TANTIEME,
-        "reliquat": SourceColTantieme.RELIQUAT,
-    }
-
-    @classmethod
-    def from_df(cls, df: pd.DataFrame) -> list["Tantieme"]:
-        rename_map = {enum.value: field for field, enum in cls.column_map.items()}
-        df = df.rename(columns=rename_map)
-        df = df[df["base_repartition_id"].notna()].copy()
-        return df.apply(lambda row: cls.model_validate(row.to_dict()), axis=1).tolist()  # type: ignore

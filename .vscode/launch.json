@@ -13,7 +13,7 @@
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "env": {
-                "PYTHONPATH": "src"
+                "PYTHONPATH": "${workspaceFolder}/src"
             }
         },
         {
@@ -24,7 +24,7 @@
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "env": {
-                "PYTHONPATH": "src"
+                "PYTHONPATH": "${workspaceFolder}/src"
             },
             "justMyCode": true
         }

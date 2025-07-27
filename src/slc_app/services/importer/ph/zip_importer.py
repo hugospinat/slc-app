@@ -1,19 +1,18 @@
+from slc_app.utils.logger import logger
 import os
 import shutil
 import tempfile
 import zipfile
 from typing import List
 
-from slc_app.services.importer.ph.base_processor import BaseProcessor
 
-
-class ZipProcessor(BaseProcessor):
+class ZipProcessor:
     """Processeur pour l'extraction et la gestion des fichiers ZIP"""
 
     dir_path: str
 
     def __init__(self):
-        super().__init__()
+        self.dir_path = None
 
     def extract_zip(self, zip_path: str) -> str:
         """Extraire un fichier ZIP et retourner le répertoire d'extraction"""
@@ -23,9 +22,9 @@ class ZipProcessor(BaseProcessor):
         try:
             with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(extract_dir)
-            self.log_success(f"ZIP extrait vers: {extract_dir}")
+            logger.info(f"ZIP extrait vers: {extract_dir}")
         except Exception as e:
-            self.log_error(f"Erreur lors de l'extraction du ZIP: {e}")
+            logger.error(f"Erreur lors de l'extraction du ZIP: {e}")
             # Nettoyer en cas d'erreur
             if os.path.exists(extract_dir):
                 shutil.rmtree(extract_dir, ignore_errors=True)
@@ -42,17 +41,17 @@ class ZipProcessor(BaseProcessor):
                 if file.lower().endswith(".pdf") and pattern in file:
                     pdf_files.append(os.path.join(root, file))
 
-        self.log_info(f"Fichiers trouvés avec le motif '{pattern}': {len(pdf_files)}")
+        logger.info(f"Fichiers trouvés avec le motif '{pattern}': {len(pdf_files)}")
         return pdf_files
 
     def find_unique_pattern_pdfs(self, pattern: str) -> str | None:
         """Trouver le fichier PDF contenant un motif unique dans le nom"""
         results = self.find_pattern_pdfs(pattern)
-        self.log_info(f"Fichiers trouvés avec le motif '{pattern}': {len(results)}")
+        logger.info(f"Fichiers trouvés avec le motif '{pattern}': {len(results)}")
         if not results:
-            self.log_warning(f"Aucun fichier trouvé avec le motif '{pattern}'")
+            logger.warning(f"Aucun fichier trouvé avec le motif '{pattern}'")
         if len(results) > 1:
-            self.log_warning(f"Plusieurs fichiers trouvés avec le motif '{pattern}': {results}")
+            logger.warning(f"Plusieurs fichiers trouvés avec le motif '{pattern}': {results}")
         return results[0] if len(results) == 1 else None
 
     def cleanup_directory(self):
@@ -60,6 +59,6 @@ class ZipProcessor(BaseProcessor):
         if self.dir_path and os.path.exists(self.dir_path):
             try:
                 shutil.rmtree(self.dir_path, ignore_errors=True)
-                self.log_info(f"Répertoire temporaire nettoyé: {self.dir_path}")
+                logger.info(f"Répertoire temporaire nettoyé: {self.dir_path}")
             except Exception as e:
-                self.log_warning(f"Impossible de nettoyer le répertoire {self.dir_path}: {e}")
+                logger.warning(f"Impossible de nettoyer le répertoire {self.dir_path}: {e}")

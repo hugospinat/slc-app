@@ -1,3 +1,6 @@
+from slc_app.utils.logger import logger
+from slc_app.utils.dataframe_mapper import create_objects_from_df
+from slc_app.services.importer.ph.constants import GED001
 import re
 from typing import List
 
@@ -6,16 +9,15 @@ import pandas as pd
 from sqlmodel import Session
 
 from slc_app.models import Facture, FacturePDF, GED001Columns
-from slc_app.services.importer.ph.base_processor import BaseProcessor
 from slc_app.utils.file_storage import save_file
 from slc_app.utils.pdf_utils import extraire_pages_pdf, extraire_texte_brut_pdf
 
 
-class ParserGED001(BaseProcessor):
+class ParserGED001:
     """Processeur spécialisé pour l'extraction des factures des PDF GED001"""
 
     def __init__(self):
-        super().__init__()
+        pass
 
     def _extract_data_from_pdf(self, ged_file: str) -> pd.DataFrame:
         """
@@ -42,7 +44,7 @@ class ParserGED001(BaseProcessor):
                 identifiant, type_facture = self._detect_facture_identifiant(texte_page)
 
                 if identifiant:  # Identifiant détecté sur cette page
-                    self.log_info(
+                    logger.info(
                         f"[DEBUG] Page {num_page}: Identifiant détecté: {identifiant} - Type: {type_facture}"
                     )
 
@@ -56,7 +58,7 @@ class ParserGED001(BaseProcessor):
                 elif identifiant_courant:
                     # Page sans identifiant, l'ajouter à la facture courante
                     factures_groupees[identifiant_courant]["pages"].append(num_page)
-                    self.log_info(
+                    logger.info(
                         f"[DEBUG] Page {num_page} (sans identifiant) ajoutée à la facture {identifiant_courant}"
                     )
 
@@ -65,7 +67,7 @@ class ParserGED001(BaseProcessor):
                 pages_facture = infos["pages"]
                 type_facture = infos["type"]
 
-                self.log_info(
+                logger.info(
                     f"[DEBUG] Création PDF pour facture {identifiant} avec {len(pages_facture)} pages: {pages_facture}"
                 )
 
@@ -75,19 +77,19 @@ class ParserGED001(BaseProcessor):
 
                 data.append(
                     {
-                        GED001Columns.IDENTIFIANT: identifiant,
-                        GED001Columns.TYPE: type_facture,
-                        GED001Columns.TEXTE_BRUT: texte_brut,
+                        GED001.IDENTIFIANT: identifiant,
+                        GED001.TYPE: type_facture,
+                        GED001.TEXTE_BRUT: texte_brut,
                         GED001Columns.CONTENU_PDF: contenu_pdf,
                     }
                 )
 
             doc.close()
 
-            self.log_info(f"📊 Extraction terminée: {len(factures_groupees)} factures regroupées")
+            logger.info(f"📊 Extraction terminée: {len(factures_groupees)} factures regroupées")
 
         except Exception as e:
-            self.log_error(f"Erreur lors de l'extraction des données du PDF: {e}")
+            logger.error(f"Erreur lors de l'extraction des données du PDF: {e}")
             raise
 
         return pd.DataFrame(data)
@@ -105,7 +107,7 @@ class ParserGED001(BaseProcessor):
         """
 
         # Générer le nom de fichier
-        filename = f"{row[GED001Columns.IDENTIFIANT]}_{row[GED001Columns.TYPE]}.pdf"
+        filename = f"{row[GED001.IDENTIFIANT]}_{row[GED001.TYPE]}.pdf"
 
         # Sauvegarder le fichier et retourner le chemin
         return save_file(row[GED001Columns.CONTENU_PDF], savePath, filename)
@@ -115,7 +117,7 @@ class ParserGED001(BaseProcessor):
         Traiter le DataFrame extrait et retourner un DataFrame prêt pour la sauvegarde.
         """
         # Appliquer la méthode _save_pdf_for_row à chaque ligne du DataFrame
-        df[GED001Columns.PATH_TO_PDF_EXTRAIT] = df.apply(
+        df[GED001.CHEMIN_FICHIER] = df.apply(
             lambda row: self._save_pdf_for_row(row, savePath), axis=1
         )
 
@@ -143,13 +145,12 @@ class ParserGED001(BaseProcessor):
             return "", ""
 
     def _associe_factures_a_pdf(
-        self, factures_pdf: List[FacturePDF], factures: List[Facture], session: Session
+        self, factures_pdf: List[FacturePDF], factures: List[Facture]
     ) -> None:
         """
         Associe les factures à leurs PDF correspondants dans le DataFrame
-        SOLUTION ARCHITECTURALE: Recharger proprement les objets depuis la DB
         """
-        self.log_info(
+        logger.info(
             f"[DEBUG] Association de {len(factures)} factures avec {len(factures_pdf)} PDFs"
         )
 
@@ -157,52 +158,23 @@ class ParserGED001(BaseProcessor):
 
         for pdf in factures_pdf:
             for f in factures:
-                # SOLUTION PROPRE: Recharger la facture depuis la DB dans la session courante
-                # Ceci garantit que l'objet est attaché à la session active
-                facture_attachee = session.get(Facture, f.id)
-
-                if (
-                    facture_attachee
-                    and pdf.identifiant is not None
-                    and pdf.identifiant in facture_attachee.libelle_ecriture
-                ):
-                    facture_attachee.facture_pdf = pdf
+                if f and pdf.identifiant is not None and pdf.identifiant in f.libelle_ecriture:
+                    f.facture_pdf = pdf
                     associations_reussies += 1
-                    self.log_info(
-                        f"[DEBUG] ✅ Facture {facture_attachee.numero_facture} associée au PDF {pdf.identifiant}"
+                    logger.info(
+                        f"[DEBUG] ✅ Facture {f.numero_facture} associée au PDF {pdf.identifiant}"
                     )
 
-        session.commit()
-        self.log_info(f"📊 Associations réussies: {associations_reussies}/{len(factures)}")
+        logger.info(f"📊 Associations réussies: {associations_reussies}/{len(factures)}")
         return
 
-    def _save_to_db(
-        self, df: pd.DataFrame, factures: List[Facture], session: Session
-    ) -> List[FacturePDF]:
-        """
-        Enregistrer les factures extraites dans la base de données
-        ARCHITECTURE AMÉLIORÉE: Session passée en paramètre
-        """
-        factures_pdf = FacturePDF.from_df(df)
-        session.add_all(factures_pdf)
-        session.commit()
-
-        # Rafraîchir les PDFs pour avoir leurs IDs
-        for f in factures_pdf:
-            session.refresh(f)
-
-        # Association avec la même session
-        self._associe_factures_a_pdf(factures_pdf, factures, session)
-        return factures_pdf
-
-    def process_ged001(
-        self, ged_file: str, factures: List[Facture], pdfSavePath: str, session: Session
-    ) -> List[FacturePDF]:
+    def process_ged001(self, ged_file: str) -> List[FacturePDF]:
         """
         Traiter une liste de fichiers GED001
-        ARCHITECTURE AMÉLIORÉE: Session gérée par l'appelant
+        et retourner les objets FacturePDF associés aux factures
         """
         df_data = self._extract_data_from_pdf(ged_file)
-        df_processed = self._process_extracted_data(df_data, pdfSavePath)
-        factures_pdf = self._save_to_db(df_processed, factures, session)
+        df_processed = self._process_extracted_data(df_data)
+        factures_pdf = create_objects_from_df(FacturePDF, df_processed)
+
         return factures_pdf

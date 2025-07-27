@@ -1,117 +1,184 @@
+from slc_app.utils.logger import logger
+from slc_app.utils.logger import logger
 from sqlmodel import Session
+from typing import List, Tuple, Optional, Any
 
 from slc_app.models import ControleCharges, Groupe, engine
-from slc_app.services.importer.ph.base_processor import BaseProcessor
-from slc_app.services.importer.ph.eau008c_parser import ParserEAU008C
+from slc_app.services.importer.ph.eau008c_parser import process_eau008c
 from slc_app.services.importer.ph.ged001_parser import ParserGED001
-from slc_app.services.importer.ph.reg010_parser import ParserREG010
-from slc_app.services.importer.ph.reg114_parser import ParserREG114
+from slc_app.services.importer.ph.reg010_parser import process_reg010
+from slc_app.services.importer.ph.reg114_parser import process_reg114
 from slc_app.services.importer.ph.zip_importer import ZipProcessor
 from slc_app.utils.file_storage import save_file_from_path
 
 
-class PHImporter(BaseProcessor):
-    """Classe principale pour traiter les fichiers ZIP et extraire les données des PDF"""
+def assign_controle_id(objects: List[Any], controle_id: int) -> None:
+    """Assigne le controle_id à tous les objets qui en ont besoin"""
+    for obj in objects:
+        if hasattr(obj, "controle_id"):
+            obj.controle_id = controle_id
 
-    def __init__(self, annee: int, groupe_id: int, path_to_zip: str) -> None:
-        """Initialiser le processeur de fichiers"""
-        super().__init__()
-        # Initialiser les processeurs spécialisés
-        self.zip_processor = ZipProcessor()
-        self.reg010_parser = ParserREG010()
-        self.reg114_parser = ParserREG114()
-        self.ged001_parser = ParserGED001()
-        self.eau008c_parser = ParserEAU008C()
 
-        self.annee = annee
-        self.groupe_id = groupe_id
-        self.path_to_zip = path_to_zip
+def process_pdf_type(
+    pdf_path: Optional[str],
+    processor_func,
+    obj_to_save: List[Any],
+    controle_id: int,
+    type_name: str,
+) -> Optional[Tuple[List[Any], List[Any]]]:
+    """Pattern générique pour traiter un type de PDF"""
+    if pdf_path:
+        result = processor_func(pdf_path)
+        objects_1, objects_2 = result
 
-        # ARCHITECTURE CENTRALISÉE: Une seule session pour tout l'import
-        with Session(engine) as session:
-            # Récupérer le groupe par son ID
-            groupe = session.get(Groupe, groupe_id)
-            if not groupe:
-                raise ValueError(f"Groupe avec l'ID {groupe_id} introuvable")
+        # Ajouter à la liste de sauvegarde
+        obj_to_save.extend(objects_1 + objects_2)
 
-            self.groupe = groupe
+        # Assigner le controle_id
+        assign_controle_id(objects_1 + objects_2, controle_id)
 
-            if groupe.id is None:
-                raise ValueError(
-                    "Groupe non valide sans ID, impossible de créer le contrôle des charges"
-                )
+        logger.info(f"📊 {type_name} - Type 1 extraits: {len(objects_1)}")
+        logger.info(f"📊 {type_name} - Type 2 extraits: {len(objects_2)}")
 
-            # Créer le contrôle des charges
-            self.controle_charges = ControleCharges(annee=annee, groupe_id=groupe.id)
-            session.add(self.controle_charges)
-            session.commit()
-            session.refresh(self.controle_charges)
+        return objects_1, objects_2
+    return None, None
 
-            # Traiter le ZIP avec la session active
-            self.process_zip_file(session)
 
-    def process_zip_file(self, session: Session) -> None:
-        """Traiter un fichier ZIP et extraire les données des PDF REG010, REG114 et GED001"""
-        try:
-            self.log_info(f"Début du traitement du fichier ZIP: {self.path_to_zip}")
+def save_all_pdfs(pdf_files: dict, base_path: str) -> None:
+    """Sauvegarde tous les PDFs dans leurs répertoires"""
+    pdf_paths = {
+        "reg010": f"{base_path}/reg010.pdf",
+        "reg114": f"{base_path}/reg114.pdf",
+        "ged001": f"{base_path}/ged001.pdf",
+        "eau008c": f"{base_path}/eau008c.pdf",
+    }
 
-            # Extraire le ZIP (pas besoin de session)
-            self.zip_processor.extract_zip(self.path_to_zip)
+    for key, path in pdf_paths.items():
+        if key in pdf_files and pdf_files[key]:
+            save_file_from_path(pdf_files[key], path)
 
-            # Trouver les fichiers REG010, REG114, GED001 et EAU008C (pas besoin de session)
-            reg010 = self.zip_processor.find_unique_pattern_pdfs("REG010")
-            reg114 = self.zip_processor.find_unique_pattern_pdfs("REG114")
-            ged001 = self.zip_processor.find_unique_pattern_pdfs("GED001")
-            eau008c = self.zip_processor.find_unique_pattern_pdfs("EAU008C")
 
-            # Traiter les fichiers REG010
-            cdc_path = f"{self.controle_charges.annee}/{self.controle_charges.groupe.identifiant}"
+def create_controle_charges(annee: int, groupe_id: int) -> Tuple[ControleCharges, str]:
+    """Crée le contrôle des charges avec gestion d'erreur et retourne aussi l'identifiant du groupe"""
+    with Session(engine) as session:
+        groupe = session.get(Groupe, groupe_id)
+        if not groupe:
+            raise ValueError(f"Groupe avec l'ID {groupe_id} introuvable")
 
-            if reg010 is None or ged001 is None:
-                self.log_error("Fichier REG010 ou GED001 manquant dans le ZIP")
-                return
-            if self.controle_charges.id is None:
-                raise ValueError(
-                    "L'identifiant du contrôle des charges est None, impossible de poursuivre l'import."
-                )
-            save_file_from_path(reg010, cdc_path, "reg010.pdf")
-
-            # ARCHITECTURE CENTRALISÉE: Passer la session à tous les parsers
-            factures, postes = self.reg010_parser.process_reg010(
-                reg010, self.controle_charges.id, session
+        if groupe.id is None:
+            raise ValueError(
+                "Groupe non valide sans ID, impossible de créer le contrôle des charges"
             )
-            self.log_info(f"📊 Factures extraites: {len(factures)}")
-            self.log_info(f"📊 Postes extraits: {len(postes)}")
 
-            # Traiter les fichiers GED001 avec la même session
-            if ged001:
-                factures_path = f"{cdc_path}/factures"
-                factures_pdf = self.ged001_parser.process_ged001(
-                    ged001, factures, factures_path, session
-                )
-                self.log_info(f"📊 Pdfs facture extraits : {len(factures_pdf)}")
+        # Créer le contrôle des charges
+        controle_charges = ControleCharges(annee=annee, groupe_id=groupe.id)
+        session.add(controle_charges)
+        session.commit()
+        session.refresh(controle_charges)
 
-            # Traiter les fichiers REG114 avec la même session
-            if reg114:
-                tantiemes, bases_repartition = self.reg114_parser.process_reg114(
-                    reg114, self.controle_charges.id, cdc_path, session
-                )
-                self.log_info(f"📊 Tantièmes extraits: {len(tantiemes)}")
-                self.log_info(f"📊 Bases de répartition extraites: {len(bases_repartition)}")
+        # Récupérer l'identifiant du groupe avant de fermer la session
+        groupe_identifiant = groupe.identifiant
 
-            # Traiter les fichiers EAU008C avec la même session
-            if eau008c:
-                releves, postes_releve = self.eau008c_parser.process_eau008c(
-                    eau008c, self.controle_charges.id, cdc_path, session
-                )
-                self.log_info(f"📊 Relevés individuels extraits: {len(releves)}")
-                self.log_info(f"📊 Postes de relevé extraits: {len(postes_releve)}")
+        return controle_charges, groupe_identifiant
+
+
+def importer_ph(annee: int, groupe_id: int, path_to_zip: str) -> None:
+    """Fonction principale pour traiter les fichiers ZIP et extraire les données des PDF"""
+
+    # Initialiser les processeurs
+    zip_processor = ZipProcessor()
+    ged001_parser = ParserGED001()
+
+    # Créer le contrôle des charges
+    try:
+        controle_charges, groupe_identifiant = create_controle_charges(annee, groupe_id)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du contrôle des charges: {e}")
+        raise e
+
+    logger.info(f"Début du traitement du fichier ZIP: {path_to_zip}")
+
+    try:
+        # Extraire le ZIP et trouver les fichiers
+        zip_processor.extract_zip(path_to_zip)
+        pdf_files = {
+            "reg010": zip_processor.find_unique_pattern_pdfs("REG010"),
+            "reg114": zip_processor.find_unique_pattern_pdfs("REG114"),
+            "ged001": zip_processor.find_unique_pattern_pdfs("GED001"),
+            "eau008c": zip_processor.find_unique_pattern_pdfs("EAU008C"),
+        }
+
+        # Vérifications obligatoires
+        if pdf_files["reg010"] is None or pdf_files["ged001"] is None:
+            logger.error("Fichier REG010 ou GED001 manquant dans le ZIP")
+            return
+
+        if controle_charges.id is None:
+            raise ValueError(
+                "L'identifiant du contrôle des charges est None, impossible de poursuivre l'import."
+            )
+
+        # Chemin de sauvegarde
+        cdc_path = f"{controle_charges.annee}/{groupe_identifiant}"
+
+        # Liste centralisée pour tous les objets à sauvegarder
+        obj_to_save = []
+
+        # Traiter REG010 (obligatoire)
+        factures, postes = process_pdf_type(
+            pdf_files["reg010"],
+            process_reg010,
+            obj_to_save,
+            controle_charges.id,
+            "REG010 (Factures/Postes)",
+        )
+
+        # Traiter REG114 (optionnel)
+        tantiemes, bases_repartition = process_pdf_type(
+            pdf_files["reg114"],
+            process_reg114,
+            obj_to_save,
+            controle_charges.id,
+            "REG114 (Tantièmes/Bases)",
+        )
+
+        # Traiter EAU008C (optionnel)
+        releves, postes_releve = process_pdf_type(
+            pdf_files["eau008c"],
+            process_eau008c,
+            obj_to_save,
+            controle_charges.id,
+            "EAU008C (Relevés/Postes)",
+        )
+
+        # SAUVEGARDE CENTRALISÉE
+        try:
+            with Session(engine) as session:
+                # Sauvegarder tous les objets d'un coup
+                session.add_all(obj_to_save)
+
+                # Traiter GED001 (garde sa logique actuelle)
+                if pdf_files["ged001"]:
+                    factures_path = f"{cdc_path}/factures"
+                    factures_pdf = ged001_parser.process_ged001(
+                        pdf_files["ged001"], factures, factures_path, session
+                    )
+                    logger.info(f"📊 PDFs facture extraits: {len(factures_pdf)}")
+
+                session.commit()
+                logger.info("✅ Toutes les données sauvegardées avec succès")
 
         except Exception as e:
-            self.log_error(f"Erreur lors du traitement du ZIP: {e}")
-            raise Exception(f"Erreur lors du traitement du ZIP: {e}")
+            logger.error(f"Erreur lors de la sauvegarde: {e}")
+            raise e
 
-        finally:
-            self.zip_processor.cleanup_directory()
+        # Sauvegarder les PDFs
+        save_all_pdfs(pdf_files, cdc_path)
 
-        return
+    except Exception as e:
+        logger.error(f"Erreur lors du traitement du ZIP: {e}")
+        raise e
+    finally:
+        zip_processor.cleanup_directory()
+
+    return

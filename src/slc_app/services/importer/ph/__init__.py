@@ -1,13 +1,13 @@
-from .eau008c_parser import ParserEAU008C
 from .ged001_parser import ParserGED001
-from .ph_importer import PHImporter
-from .reg010_parser import ParserREG010
-from .reg114_parser import ParserREG114
+from .ph_importer import importer_ph
+from .reg010_parser import process_reg010
+from .reg114_parser import process_reg114
+from .eau008c_parser import process_eau008c
 
 __all__ = [
-    "ParserEAU008C",
     "ParserGED001",
-    "PHImporter",
-    "ParserREG010",
-    "ParserREG114",
+    "importer_ph",
+    "process_reg010",
+    "process_reg114",
+    "process_eau008c",
 ]

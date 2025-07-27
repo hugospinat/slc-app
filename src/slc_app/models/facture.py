@@ -1,10 +1,7 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, ClassVar, Optional
+from typing import TYPE_CHECKING, Optional
 
-import pandas as pd
 from sqlmodel import Field, Relationship, SQLModel
-
-from .columns import SourceColFacture
 
 if TYPE_CHECKING:
     from slc_app.models import FactureElectricite, FacturePDF, Fournisseur, Poste
@@ -33,20 +30,3 @@ class Facture(SQLModel, table=True):
     details_electricite: Optional["FactureElectricite"] = Relationship(back_populates="facture")
     fournisseur: Optional["Fournisseur"] = Relationship(back_populates="factures")
     facture_pdf: Optional["FacturePDF"] = Relationship(back_populates="factures")
-
-    column_map: ClassVar[dict] = {
-        "poste_id": SourceColFacture.POSTE_ID,
-        "numero_facture": SourceColFacture.NUMERO_FACTURE,
-        "code_journal": SourceColFacture.CODE_JOURNAL,
-        "numero_compte_comptable": SourceColFacture.NUMERO_COMPTE_COMPTABLE,
-        "montant_comptable": SourceColFacture.MONTANT_COMPTABLE,
-        "libelle_ecriture": SourceColFacture.LIBELLE_ECRITURE,
-        "references_partenaire_facture": SourceColFacture.REFERENCES_PARTENAIRE_FACTURE,
-    }
-
-    @classmethod
-    def from_df(cls, df: pd.DataFrame) -> list["Facture"]:
-        """Convertir un DataFrame en liste d'objets Facture"""
-        rename_map = {enum.value: field for field, enum in cls.column_map.items()}
-        df = df.rename(columns=rename_map)
-        return df.apply(lambda row: cls(**row.to_dict()), axis=1).tolist()  # type: ignore

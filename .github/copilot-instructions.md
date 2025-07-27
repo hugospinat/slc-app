@@ -210,16 +210,7 @@ Merci d'utiliser exclusivement SQLModel pour les modèles de données et les req
 - **Fournisseur** : Représente un fournisseur avec son nom et ses regex de reconnaissance et le champ dans le quel applique le regex pour associe le fournisseur à la Facture. De plus, il est associé à un TypeFacture étendu (c'est ce qui permet de savoir si c'est une facture d'électricité, d'eau, etc.).
 - **RegleExtractionChamp** : Rattaché à un Fournissuer. Représente les règles d'extraction des données depuis les PDF, avec regex et choix du champ d'output de la Facture ou FactureEtendue
 
-## Processus d'importation
-
-1. Décompression des fichiers ZIP
-2. Création du ControleCharges pour l'année et le groupe
-3. Importation séquentiel des PDF REG010, GED001, REG114
-   - Extraction des données avec tabula (fonction `_extract_data_from_pdf`)
-   - Nettoyage et validation des données exclusivement avec pandas (fonction `_process_extracted_data`)
-   - Sauvegarde des données extraites dans la base de données (fonction `_save_to_db`, exclusivement avec SQLModel .add_all()) retournant les objets SQLModel correspondants
-
-### Gestion des erreurs
+## Gestion des erreurs
 
 - Lever des exceptions explicites si l’erreur est grave ou si le format est incorrect, par exemple en utilisant `raise ValueError("Message d'erreur")` ou `raise Exception("Message d'erreur")` pour les erreurs générales.
 - Logguer les événements et contextes, même sans plantage
@@ -240,8 +231,7 @@ Merci d'utiliser exclusivement SQLModel pour les modèles de données et les req
 
 ## Style attendu
 
-- Favoriser les `@classmethod` pour les méthodes d’import depuis DataFrame
-- Utiliser des `Enum` pour les colonnes sources (éviter les chaînes brutes)
+
 
 ## Organisation du code
 

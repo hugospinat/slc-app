@@ -77,15 +77,6 @@ def init_database():
 
 def main():
     st.set_page_config(page_title="Contrôle des Charges", page_icon="📊", layout="wide")
-
-    # Initialiser la base de données
-    init_database()
-
-
-if __name__ == "__main__":
-    main()
-    st.set_page_config(page_title="Contrôle des Charges", page_icon="📊", layout="wide")
-
     # Initialiser la base de données
     init_database()
 
