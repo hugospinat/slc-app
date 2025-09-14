@@ -36,6 +36,8 @@ def test_ged001_same_identifier_grouping():
         return "", ""
 
     # Mock fitz.open et les extractions PDF
+    from unittest.mock import MagicMock
+
     with patch("fitz.open") as mock_fitz_open, patch.object(
         parser, "_detect_facture_identifiant", side_effect=mock_detect_facture_identifiant
     ), patch(
@@ -45,7 +47,7 @@ def test_ged001_same_identifier_grouping():
     ) as mock_extraire_texte:
 
         # Configuration du mock PDF
-        mock_doc = Mock()
+        mock_doc = MagicMock()
         mock_doc.__len__.return_value = 5  # 5 pages
 
         mock_pages = []

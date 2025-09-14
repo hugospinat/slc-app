@@ -3,9 +3,7 @@ import logging
 import streamlit as st
 from sqlmodel import Session, select
 
-from slc_app.utils import logging_config  # noqa: F401
-
-logger = logging.getLogger(__name__)
+from slc_app.utils.logger import logger
 
 
 def run_test_import():
@@ -64,9 +62,6 @@ def init_database():
 
             groupes_count = len(session.exec(select(Groupe)).all())
             logger.info(f"📊 Groupes existants: {groupes_count}")
-
-        # Lancer le test d'importation automatiquement
-        run_test_import()
 
     except Exception as e:
         logger.error(f"❌ Erreur lors de l'initialisation de la base: {e}")

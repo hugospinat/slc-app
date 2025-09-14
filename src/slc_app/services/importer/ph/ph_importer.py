@@ -1,16 +1,16 @@
 import os
-from slc_app.utils.logger import logger
+
 from slc_app.utils.logger import logger
 from sqlmodel import Session
 from typing import Dict, List, Tuple, Optional, Any
 
-from slc_app.models import ControleCharges, Groupe, engine, FacturePDF, Facture
+from slc_app.models import ControleCharges, Groupe, engine, FacturePDF, Facture, Tantieme
 from slc_app.services.importer.ph.eau008c_parser import process_eau008c
 from slc_app.services.importer.ph.ged001_parser import ParserGED001
 from slc_app.services.importer.ph.reg010_parser import process_reg010
 from slc_app.services.importer.ph.reg114_parser import process_reg114
 from slc_app.services.importer.ph.zip_importer import ZipProcessor
-from slc_app.utils.file_storage import save_file_from_path
+from slc_app.utils.file_storage import save_file, save_file_from_path
 
 
 def assign_controle_id(objects: List[Any], controle_id: int) -> None:
@@ -47,16 +47,16 @@ def process_pdf_type(
 
 def save_all_pdfs(pdf_files: dict, base_path: str) -> None:
     """Sauvegarde tous les PDFs dans leurs répertoires"""
-    pdf_paths = {
-        "reg010": f"{base_path}/reg010.pdf",
-        "reg114": f"{base_path}/reg114.pdf",
-        "ged001": f"{base_path}/ged001.pdf",
-        "eau008c": f"{base_path}/eau008c.pdf",
+    pdf_filenames = {
+        "reg010": "reg010.pdf",
+        "reg114": "reg114.pdf",
+        "ged001": "ged001.pdf",
+        "eau008c": "eau008c.pdf",
     }
 
-    for key, path in pdf_paths.items():
+    for key, filename in pdf_filenames.items():
         if key in pdf_files and pdf_files[key]:
-            save_file_from_path(pdf_files[key], path)
+            save_file_from_path(pdf_files[key], base_path, filename)
 
 
 def create_controle_charges(annee: int, groupe_id: int) -> Tuple[ControleCharges, Groupe]:
@@ -141,6 +141,7 @@ def importer_ph(annee: int, groupe_id: int, path_to_zip: str) -> None:
         )
 
         # Traiter EAU008C (optionnel)
+
         releves, postes_releve = process_pdf_type(
             pdf_files["eau008c"],
             process_eau008c,
@@ -177,8 +178,9 @@ def save_to_db(obj_to_save: List[Any]) -> None:
     try:
         with Session(engine) as session:
             # Ajouter les FacturePDF à la liste
-            session.add_all(obj_to_save)
-            session.commit()
+            for obj in obj_to_save:
+                session.add(obj)
+                session.commit()
             logger.info("✅ Toutes les données sauvegardées avec succès")
     except Exception as e:
         logger.error(f"Erreur lors de la sauvegarde: {e}")
@@ -191,7 +193,7 @@ def save_pdfs_factures(dict_pdfs: List[Tuple[FacturePDF, bytes]], factures_path:
     """
     for facture_pdf, pdf_content in dict_pdfs:
         filename = f"{facture_pdf.identifiant}_{facture_pdf.type}.pdf"
-        facture_pdf.chemin_fichier = save_file_from_path(pdf_content, factures_path, filename)
+        facture_pdf.chemin_fichier = save_file(pdf_content, factures_path, filename)
         logger.info(f"📄 PDF sauvegardé: {filename}")
 
 
@@ -203,8 +205,7 @@ def associe_factures_a_pdf(factures_pdf: List[FacturePDF], factures: List[Factur
     for f in factures:
         for pdf in factures_pdf:
             if pdf.identifiant in f.libelle_ecriture:
-                f.pdf = pdf
+                f.facture_pdf = pdf
                 associations_reussies += 1
-                logger.info(f"📄 PDF associé à la facture {f.libelle_ecriture}")
     logger.info(f"📊 Associations réussies: {associations_reussies}/{len(factures)}")
     return

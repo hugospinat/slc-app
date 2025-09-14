@@ -10,6 +10,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+
 # Ajouter le répertoire src au PYTHONPATH
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
@@ -27,7 +28,14 @@ def test_import_ph():
         print("[IMPORT] Importation des modules...")
         from sqlmodel import Session
 
-        from slc_app.models import ControleCharges, FacturePDF, Groupe, engine
+        from slc_app.models import (
+            ControleCharges,
+            FacturePDF,
+            Groupe,
+            engine,
+            ReleveIndividuel,
+            PosteReleve,
+        )
         from slc_app.services.importer.ph.ph_importer import importer_ph
 
         print("[OK] Modules importés avec succès")
@@ -99,6 +107,8 @@ def test_import_ph():
                     nb_bases = len(session.exec(select(BaseRepartition)).all())
                     nb_tantiemes = len(session.exec(select(Tantieme)).all())
                     nb_factures_pdf = len(session.exec(select(FacturePDF)).all())
+                    nb_releves_individuels = len(session.exec(select(ReleveIndividuel)).all())
+                    nb_postes_releve = len(session.exec(select(PosteReleve)).all())
 
                     print("[DATA] Données importées:")
                     print(f"   - Factures: {nb_factures}")
@@ -106,6 +116,8 @@ def test_import_ph():
                     print(f"   - Factures PDF: {nb_factures_pdf}")
                     print(f"   - Bases de répartition: {nb_bases}")
                     print(f"   - Tantièmes: {nb_tantiemes}")
+                    print(f"   - Relevés Individuels: {nb_releves_individuels}")
+                    print(f"   - Postes de relevé: {nb_postes_releve}")
 
                 else:
                     print("[WARNING] Aucun contrôle trouvé")

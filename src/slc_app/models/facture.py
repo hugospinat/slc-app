@@ -8,6 +8,7 @@ if TYPE_CHECKING:
 
 
 class Facture(SQLModel, table=True):
+    numero_local: Optional[str] = None
     id: Optional[int] = Field(default=None, primary_key=True)
     poste_id: int = Field(foreign_key="poste.id")
     numero_facture: Optional[str] = None
@@ -19,8 +20,6 @@ class Facture(SQLModel, table=True):
     statut: str = "en_attente"
     commentaire_contestation: Optional[str] = None
     date_traitement: Optional[datetime] = None
-    pdf_facture_nom: Optional[str] = None
-    pdf_facture_contenu: Optional[bytes] = None
     texte_brut_pdf: Optional[str] = None
     fournisseur_id: Optional[int] = Field(default=None, foreign_key="fournisseur.id")
     facture_pdf_id: Optional[int] = Field(default=None, foreign_key="facturepdf.id")

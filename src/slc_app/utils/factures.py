@@ -1,12 +1,9 @@
-import logging
 from datetime import datetime
 
 from sqlmodel import Session
 
 from slc_app.models import Facture, engine
-from slc_app.utils import logging_config  # noqa: F401
-
-logger = logging.getLogger(__name__)
+from slc_app.utils.logger import logger  # noqa: F401
 
 
 def update_facture_statut(facture_id: int, nouveau_statut: str):

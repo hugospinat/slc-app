@@ -181,14 +181,8 @@ class TableauParser:
         # Extraire avec regex
         extracted = self.df[colonne_source].str.extract(regex, expand=True)
 
-        # Gérer les noms de colonnes
         if nouvelle_colonne is None:
-            # Par défaut, remplacer la colonne source
             nouvelle_colonne = [colonne_source]
-            drop_source = True
-        else:
-            # Vérifier si on doit supprimer la colonne source
-            drop_source = colonne_source in nouvelle_colonne
 
         # Ajuster le nombre de noms de colonnes au nombre de groupes extraits
         nb_groupes = extracted.shape[1]
@@ -201,15 +195,14 @@ class TableauParser:
         if nouvelle_colonne is not None:
             extracted.columns = nouvelle_colonne
 
-        # Supprimer la colonne source si nécessaire
-        if drop_source and colonne_source in self.df.columns:
+        # Supprimer la colonne source et ajouter les nouvelles colonnes
+        if drop_source:
+            self.df = extracted.copy()
+        elif colonne_source in nouvelle_colonne:
             self.df = self.df.drop(columns=[colonne_source])
-
-        # Ajouter les colonnes extraites au DataFrame
-        if not drop_source:
             self.df = pd.concat([self.df, extracted], axis=1)
         else:
-            self.df = extracted.copy()
+            self.df = pd.concat([self.df, extracted], axis=1)
 
         nb_extraites = extracted.count().sum()
         logger.info(
@@ -249,7 +242,7 @@ class TableauParser:
 
         nb_doublons_supprimes = nb_lignes_avant - len(self.df)
         if nb_doublons_supprimes > 0:
-            logger.info(f"⚠️ {nb_doublons_supprimes} doublons supprimés")
+            logger.info(f"⚠️ {nb_doublons_supprimes}/{nb_lignes_avant} doublons supprimés")
         else:
             logger.info("✅ Aucun doublon détecté")
         return self
@@ -299,7 +292,7 @@ class TableauParser:
         logger.info(f"Extraction terminée: {len(self.df)} {nom_type_donnee} valides uniques")
 
         if not self.df.empty:
-            identifiants_uniques = self.df[colonne_identifiants].dropna().unique()
+            identifiants_uniques = self.df[colonne_identifiants].dropna()
             logger.info(f"🏷️ Identifiants trouvés: {list(identifiants_uniques)}")
 
             if colonne_montants and colonne_montants in self.df.columns:
@@ -318,6 +311,7 @@ class TableauParser:
                 if colonne_montants and colonne_montants in self.df.columns:
                     ligne_info += f", Montant: {row.get(colonne_montants, 'N/A')}"
                 logger.info(ligne_info)
+        return self
 
     def definir_colonnes(self, noms_colonnes: List[str]):
         """Définir les noms de colonnes pour df"""
@@ -359,6 +353,7 @@ class TableauParser:
     def to_date(self, date_columns: List[str]):
         """
         Convertit les colonnes spécifiées en dates (format français jj/mm/aaaa)
+        Gère proprement les valeurs NaT en les convertissant en None
 
         Args:
             date_columns: Liste des noms de colonnes à convertir en dates
@@ -370,6 +365,17 @@ class TableauParser:
             if col in self.df.columns:
                 # Convertir en datetime avec format français jj/mm/aaaa
                 self.df[col] = pd.to_datetime(self.df[col], format="%d/%m/%Y", errors="coerce")
+                # Remplacer explicitement les NaT par None pour éviter les erreurs de conversion
+                self.df[col] = self.df[col].where(pd.notna(self.df[col]), None)
+                # Forcer le type object pour que None soit bien un None Python
+                self.df[col] = self.df[col].astype(object)
+                logger.info(f"📅 Colonne '{col}' convertie en dates (NaT → None)")
+                # Vérification post-conversion : logger les valeurs qui ne sont ni None ni datetime
+                for i, val in enumerate(self.df[col].head(20)):
+                    if val is not None and not isinstance(val, pd.Timestamp):
+                        logger.warning(
+                            f"[CHECK] Colonne '{col}' ligne {i}: valeur inattendue {val} de type {type(val)}"
+                        )
         return self
 
     def dropna(self, subset: List[str] = None):
@@ -405,6 +411,10 @@ class TableauParser:
         """
         # Créer les objets sans le champ de groupement
         df_objects = self.df.drop(columns=[field_name])
+        logger.info(
+            f"[DEBUG] DataFrame pour création d'objets - {len(df_objects)} lignes, colonnes: {list(df_objects.columns)}"
+        )
+
         objects = create_objects_from_df(model, df_objects)
 
         # Créer le mapping en utilisant les valeurs du champ
@@ -450,3 +460,21 @@ class TableauParser:
                     f"Clé '{clean_key_val}' non trouvée dans le mapping pour {relation_field}"
                 )
         return result
+
+    def nan_to_none(self, columns: List[str] = None):
+        """
+        Remplace les NaN par None dans les colonnes spécifiées d'un DataFrame.
+
+        Args:
+            df: Le DataFrame à modifier
+            columns: Liste des noms de colonnes à traiter
+
+        Returns:
+            DataFrame avec NaN remplacés par None dans les colonnes spécifiées
+        """
+        if columns is None:
+            columns = self.df.columns.tolist()
+        for col in columns:
+            if col in self.df.columns:
+                self.df[col] = self.df[col].where(pd.notna(self.df[col]), None)
+        return self

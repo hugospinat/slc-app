@@ -40,10 +40,6 @@ class ParserGED001:
                 identifiant, type_facture = self._detect_facture_identifiant(texte_page)
 
                 if identifiant:  # Identifiant détecté sur cette page
-                    logger.info(
-                        f"[DEBUG] Page {num_page}: Identifiant détecté: {identifiant} - Type: {type_facture}"
-                    )
-
                     # Créer ou mettre à jour l'entrée pour cet identifiant
                     if identifiant not in factures_groupees:
                         factures_groupees[identifiant] = {"pages": [], "type": type_facture}
@@ -62,10 +58,6 @@ class ParserGED001:
             for identifiant, infos in factures_groupees.items():
                 pages_facture = infos["pages"]
                 type_facture = infos["type"]
-
-                logger.info(
-                    f"[DEBUG] Création PDF pour facture {identifiant} avec {len(pages_facture)} pages: {pages_facture}"
-                )
 
                 # Extraire le contenu PDF pour toutes les pages de cette facture
                 contenu_pdf = extraire_pages_pdf(ged_file, pages_facture)

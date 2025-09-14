@@ -36,17 +36,21 @@ def process_reg114(pdf_path: str) -> Tuple[List[Tantieme], List[BaseRepartition]
 
         # Extraire les bases de répartition
         bases = (
-            parser.copy_tableau(REG114.NUMERO_UG)  # Prendre la première colonne
+            parser.copy_tableau([REG114.NUMERO_UG])  # Prendre la première colonne
             .apply_regex(
                 REG114.NUMERO_UG,
                 regex_code_et_nom,
                 [REG114_BASE.CODE, REG114_BASE.NOM],
                 drop_source=True,
             )
-            .dropna([REG114_BASE.CODE])
             .supprimer_doublons([REG114_BASE.CODE])
+            .dropna([REG114_BASE.CODE])
             .to_objects(BaseRepartition)
         )
+
+        # Affiche toutes les bases de répartition trouvées
+        for base in bases:
+            logger.info(f"Base de répartition trouvée: {base.code} - {base.nom}")
 
         # Traitement principal avec composition
         tantiemes_parser = (
@@ -55,7 +59,11 @@ def process_reg114(pdf_path: str) -> Tuple[List[Tantieme], List[BaseRepartition]
             .apply_regex(REG114.NUMERO_UG, regex_code, [REG114_BASE.CODE])
             .forward_fill(REG114_BASE.CODE)
             .filtre_regex(REG114.TANTIEME, r"^-?\d+\.\d{1,2}$")
+            .filtre_regex(REG114.NUMERO_UG, r"^\d+$")
+            .supprimer_doublons([REG114.NUMERO_UG, REG114_BASE.CODE])
             .to_date([REG114.DEBUT_OCCUPATION, REG114.FIN_OCCUPATION])  # Convertir les dates
+            .col_to_float([REG114.TANTIEME, REG114.RELIQUAT])
+            .nan_to_none()
         )
 
         if not bases:

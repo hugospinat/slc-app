@@ -1,379 +1,186 @@
-from typing import Dict, List, Optional
-
 import pandas as pd
 import streamlit as st
-from slc_app.models import ControleCharges, Groupe, ReleveIndividuel, PosteReleve, engine
-from sqlmodel import Session, select
+
+from slc_app.services.releves_individuels_service import (
+    get_all_controles_charges,
+    get_postes_releve_by_controle,
+    get_releves_individuels,
+    get_stats_releves,
+)
 
 
-def show_releves_individuels_page():
-    """Page de visualisation des relevés individuels par contrôle de charges"""
+def show():
+    st.title("Relevés Individuels")
+    st.markdown("Visualisation des index de compteurs et leurs évolutions")
 
-    st.title("💧 Visualisation des Relevés Individuels")
-    st.markdown("Consultez les relevés individuels par contrôle de charges et postes")
-
-    # Sidebar pour sélection du contrôle
+    # Sidebar pour les filtres
     with st.sidebar:
-        st.header("🔧 Sélection du Contrôle")
+        st.header("Filtres")
 
-        # Récupérer les contrôles disponibles avec relevés individuels
-        controles_disponibles = get_controles_avec_releves()
+        # Récupérer tous les contrôles de charges
+        controles = get_all_controles_charges()
 
-        if not controles_disponibles:
-            st.warning("Aucun contrôle avec relevés individuels trouvé")
-            st.stop()
+        if not controles:
+            st.warning("Aucun contrôle de charges disponible")
+            return
 
-        # Créer les options pour la selectbox
-        options_controles = []
-        for controle in controles_disponibles:
-            label = (
-                f"{controle['annee']} - {controle['groupe_nom']} ({controle['nb_postes']} postes)"
-            )
-            options_controles.append({"label": label, "value": controle["id"], "data": controle})
+        # Créer les options pour le selectbox
+        controle_options = {f"{c.annee} - {c.groupe.nom}": c for c in controles}
 
-        # Selectbox pour choisir le contrôle
-        selected_controle = st.selectbox(
-            "Choisir un contrôle de charges:",
-            options=options_controles,
-            format_func=lambda x: x["label"] if x else "Aucun",
+        # Sélection du contrôle de charges
+        selected_controle_label = st.selectbox(
+            "Contrôle de charges (Année - Groupe)", options=list(controle_options.keys()), index=0
         )
 
-        if selected_controle:
-            controle_data = selected_controle["data"]
-            st.success("✅ Contrôle sélectionné")
-            st.info(
-                f"""
-            **Année:** {controle_data['annee']}
-            **Groupe:** {controle_data['groupe_nom']}
-            **Postes de relevé:** {controle_data['nb_postes']}
-            **Total relevés:** {controle_data['nb_releves']}
-            """
+        selected_controle = controle_options[selected_controle_label]
+
+        # Récupérer les postes relevé pour ce contrôle
+        postes_releve = get_postes_releve_by_controle(selected_controle.id)
+
+        if not postes_releve:
+            st.warning("Aucun poste relevé disponible pour ce contrôle")
+            return
+
+        # Sélection du poste (pas d'option "Tous")
+        poste_options = {p.nom: p.id for p in postes_releve}
+
+        selected_poste_label = st.selectbox(
+            "Poste relevé", options=list(poste_options.keys()), index=0
+        )
+
+        selected_poste_id = poste_options[selected_poste_label]
+
+    # Zone principale
+    st.subheader(f"Relevés pour {selected_controle_label}")
+    st.info(f"Poste : {selected_poste_label}")
+
+    # Récupérer les relevés
+    releves = get_releves_individuels(
+        controle_charges_id=selected_controle.id, poste_releve_id=selected_poste_id
+    )
+
+    if not releves:
+        st.warning("Aucun relevé trouvé pour les critères sélectionnés")
+        return
+
+    # Afficher les statistiques globales
+    stats = get_stats_releves(releves)
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total relevés", stats["total"])
+    with col2:
+        st.metric("Consommation totale", f"{stats['consommation_totale']:.0f}")
+    with col3:
+        st.metric(
+            "Évolution moyenne",
+            f"{stats['evolution_moyenne']:.1f}" if stats["evolution_moyenne"] else "N/A",
+        )
+    with col4:
+        if stats["evolution_min"] is not None and stats["evolution_max"] is not None:
+            st.metric("Min / Max", f"{stats['evolution_min']:.0f} / {stats['evolution_max']:.0f}")
+        else:
+            st.metric("Min / Max", "N/A")
+
+    # Regrouper les relevés par UG
+    releves_par_ug = {}
+    for releve in releves:
+        ug = releve.numero_ug
+        if ug not in releves_par_ug:
+            releves_par_ug[ug] = []
+        releves_par_ug[ug].append(releve)
+
+    # Trier les UG par numéro
+    ugs_triees = sorted(releves_par_ug.keys())
+
+    # Afficher un dataframe pour chaque UG
+    st.subheader(f"Détail des relevés par UG ({len(ugs_triees)} UG)")
+
+    for ug in ugs_triees:
+        releves_ug = releves_par_ug[ug]
+
+        # Calculer la consommation totale de l'UG
+        consommation_ug = sum(
+            r.evolution_index for r in releves_ug if r.evolution_index is not None
+        )
+
+        # Afficher l'en-tête de l'UG avec sa consommation
+        nature_ug = releves_ug[0].nature_ug or "Non spécifiée"
+        st.markdown(f"### UG {ug} - {nature_ug}")
+        st.markdown(f"**Consommation totale : {consommation_ug:.0f}**")
+
+        # Préparer les données pour le dataframe de cette UG
+        data_ug = []
+        for releve in releves_ug:
+            data_ug.append(
+                {
+                    "N° CA": releve.numero_ca,
+                    "Point comptage": releve.point_comptage or "",
+                    "N° Compteur": releve.numero_serie_compteur or "",
+                    "Date relevé": (
+                        releve.date_releve.strftime("%d/%m/%Y") if releve.date_releve else ""
+                    ),
+                    "Type relevé": releve.type_releve or "",
+                    "Index relevé": releve.index_releve if releve.index_releve is not None else "",
+                    "Évolution index": (
+                        releve.evolution_index if releve.evolution_index is not None else ""
+                    ),
+                    "Observations": releve.observations or "",
+                }
             )
 
-            # Section de filtrage par poste
-            st.header("🔍 Filtrage")
+        # Créer et afficher le dataframe pour cette UG
+        df_ug = pd.DataFrame(data_ug)
+        st.dataframe(df_ug, use_container_width=True, hide_index=True)
 
-            # Récupérer les postes pour ce contrôle
-            postes_disponibles = get_postes_pour_controle(controle_data["id"])
+        # Ajouter un espace entre les UG
+        st.markdown("---")
 
-            # Option "Tous les postes"
-            options_postes = [{"label": "🔄 Tous les postes", "value": None}]
-            for poste in postes_disponibles:
-                options_postes.append(
+    # Options d'export global
+    if releves:
+        st.subheader("Export")
+
+        # Préparer toutes les données pour l'export
+        all_data = []
+        for ug in ugs_triees:
+            releves_ug = releves_par_ug[ug]
+            consommation_ug = sum(
+                r.evolution_index for r in releves_ug if r.evolution_index is not None
+            )
+
+            for releve in releves_ug:
+                all_data.append(
                     {
-                        "label": f"📍 {poste['nom']} ({poste['nb_releves']} relevés)",
-                        "value": poste["id"],
+                        "N° UG": releve.numero_ug,
+                        "Nature UG": releve.nature_ug or "",
+                        "Consommation UG": consommation_ug,
+                        "N° CA": releve.numero_ca,
+                        "Point comptage": releve.point_comptage or "",
+                        "N° Compteur": releve.numero_serie_compteur or "",
+                        "Date relevé": (
+                            releve.date_releve.strftime("%d/%m/%Y") if releve.date_releve else ""
+                        ),
+                        "Type relevé": releve.type_releve or "",
+                        "Index relevé": (
+                            releve.index_releve if releve.index_releve is not None else ""
+                        ),
+                        "Évolution index": (
+                            releve.evolution_index if releve.evolution_index is not None else ""
+                        ),
+                        "Observations": releve.observations or "",
                     }
                 )
 
-            selected_poste = st.selectbox(
-                "Filtrer par poste:",
-                options=options_postes,
-                format_func=lambda x: x["label"] if x else "Aucun",
-            )
+        df_export = pd.DataFrame(all_data)
+        csv = df_export.to_csv(index=False, sep=";", encoding="utf-8-sig")
 
-    # Contenu principal
-    if selected_controle:
-        controle_id = selected_controle["value"]
-        poste_id = selected_poste["value"] if selected_poste else None
-
-        st.header("📋 Données des Relevés Individuels")
-
-        # Récupérer et afficher les données
-        releves_df = get_releves_dataframe(controle_id, poste_id)
-
-        if releves_df.empty:
-            st.warning("Aucun relevé individuel trouvé pour cette sélection")
-        else:
-            # Affichage des métriques
-            col1, col2, col3, col4 = st.columns(4)
-
-            with col1:
-                st.metric("Total relevés", len(releves_df))
-
-            with col2:
-                ug_uniques = (
-                    releves_df["numero_ug"].nunique() if "numero_ug" in releves_df.columns else 0
-                )
-                st.metric("UG uniques", ug_uniques)
-
-            with col3:
-                if "total_facture" in releves_df.columns:
-                    total_montant = releves_df["total_facture"].sum()
-                    st.metric("Total montant", f"{total_montant:.2f} €")
-                else:
-                    st.metric("Total montant", "N/A")
-
-            with col4:
-                postes_uniques = (
-                    releves_df["poste_nom"].nunique() if "poste_nom" in releves_df.columns else 0
-                )
-                st.metric("Postes", postes_uniques)
-
-            # Onglets pour différentes vues
-            tab1, tab2, tab3 = st.tabs(
-                ["📊 Tableau détaillé", "📈 Statistiques", "📋 Résumé par UG"]
-            )
-
-            with tab1:
-                st.subheader("Tableau des relevés individuels")
-
-                # Options d'affichage
-                col_options1, col_options2 = st.columns(2)
-                with col_options1:
-                    show_all_columns = st.checkbox("Afficher toutes les colonnes", value=False)
-                with col_options2:
-                    highlight_anomalies = st.checkbox("Surligner les anomalies", value=True)
-
-                # Préparer le DataFrame pour l'affichage
-                display_df = prepare_releves_for_display(releves_df, show_all_columns)
-
-                # Styling conditionnel
-                if highlight_anomalies:
-                    display_df = apply_releves_styling(display_df)
-
-                st.dataframe(display_df, use_container_width=True, height=400)
-
-                # Bouton de téléchargement
-                csv = releves_df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Télécharger en CSV",
-                    data=csv,
-                    file_name=f"releves_individuels_{controle_data['annee']}_{controle_data['groupe_nom']}.csv",
-                    mime="text/csv",
-                )
-
-            with tab2:
-                st.subheader("Statistiques des relevés")
-
-                if "total_facture" in releves_df.columns:
-                    # Statistiques des montants
-                    st.write("**Distribution des montants:**")
-                    montants_stats = releves_df["total_facture"].describe()
-                    st.dataframe(montants_stats)
-
-                    # Graphique des montants par poste
-                    if "poste_nom" in releves_df.columns:
-                        st.write("**Montants par poste:**")
-                        montants_par_poste = (
-                            releves_df.groupby("poste_nom")["total_facture"]
-                            .agg(["sum", "count", "mean"])
-                            .round(2)
-                        )
-                        st.dataframe(montants_par_poste)
-
-                # Statistiques des UG
-                if "numero_ug" in releves_df.columns:
-                    st.write("**Répartition par UG:**")
-                    ug_stats = releves_df["numero_ug"].value_counts().head(10)
-                    st.bar_chart(ug_stats)
-
-            with tab3:
-                st.subheader("Résumé par UG")
-
-                if "numero_ug" in releves_df.columns:
-                    # Résumé par UG
-                    resume_cols = ["numero_ug"]
-                    if "numero_ca" in releves_df.columns:
-                        resume_cols.append("numero_ca")
-                    if "total_facture" in releves_df.columns:
-                        resume_cols.append("total_facture")
-                    if "poste_nom" in releves_df.columns:
-                        resume_cols.append("poste_nom")
-
-                    resume_ug = (
-                        releves_df[resume_cols]
-                        .groupby("numero_ug")
-                        .agg(
-                            {
-                                col: (
-                                    "first"
-                                    if col in ["numero_ca"]
-                                    else "sum" if col == "total_facture" else "count"
-                                )
-                                for col in resume_cols
-                                if col != "numero_ug"
-                            }
-                        )
-                        .reset_index()
-                    )
-
-                    st.dataframe(resume_ug, use_container_width=True, height=400)
-
-
-def get_controles_avec_releves() -> List[Dict]:
-    """Récupérer les contrôles qui ont des relevés individuels"""
-    with Session(engine) as session:
-        # Requête pour récupérer les contrôles avec le nombre de relevés et postes
-        query = """
-        SELECT 
-            cc.id,
-            cc.annee,
-            g.nom as groupe_nom,
-            COUNT(DISTINCT pr.id) as nb_postes,
-            COUNT(ri.id) as nb_releves
-        FROM controle_charges cc
-        JOIN groupe g ON cc.groupe_id = g.id
-        LEFT JOIN poste_releve pr ON pr.controle_charges_id = cc.id
-        LEFT JOIN releve_individuel ri ON ri.poste_releve_id = pr.id
-        GROUP BY cc.id, cc.annee, g.nom
-        HAVING COUNT(ri.id) > 0
-        ORDER BY cc.annee DESC, g.nom
-        """
-
-        result = session.exec(query)
-        return [
-            {
-                "id": row[0],
-                "annee": row[1],
-                "groupe_nom": row[2],
-                "nb_postes": row[3],
-                "nb_releves": row[4],
-            }
-            for row in result
-        ]
-
-
-def get_postes_pour_controle(controle_id: int) -> List[Dict]:
-    """Récupérer les postes de relevé pour un contrôle donné"""
-    with Session(engine) as session:
-        query = """
-        SELECT 
-            pr.id,
-            pr.nom,
-            COUNT(ri.id) as nb_releves
-        FROM poste_releve pr
-        LEFT JOIN releve_individuel ri ON ri.poste_releve_id = pr.id
-        WHERE pr.controle_charges_id = ?
-        GROUP BY pr.id, pr.nom
-        ORDER BY pr.nom
-        """
-
-        result = session.exec(query, [controle_id])
-        return [{"id": row[0], "nom": row[1], "nb_releves": row[2]} for row in result]
-
-
-def get_releves_dataframe(controle_id: int, poste_id: Optional[int] = None) -> pd.DataFrame:
-    """Récupérer les données des relevés individuels sous forme de DataFrame"""
-    with Session(engine) as session:
-        # Construire la requête base
-        query = """
-        SELECT 
-            ri.id,
-            ri.numero_ug,
-            ri.numero_ca,
-            ri.nature_ug,
-            ri.point_comptage,
-            ri.numero_serie_compteur,
-            ri.date_releve,
-            ri.date_valeur,
-            ri.type_releve,
-            ri.observations,
-            ri.index,
-            ri.evolution_index,
-            ri.ancien_index,
-            ri.nouvel_index,
-            ri.consommation,
-            ri.montant_consommation,
-            ri.montant_abonnement,
-            ri.montant_divers,
-            ri.total_facture,
-            pr.nom as poste_nom,
-            cc.annee,
-            g.nom as groupe_nom
-        FROM releve_individuel ri
-        JOIN poste_releve pr ON ri.poste_releve_id = pr.id
-        JOIN controle_charges cc ON pr.controle_charges_id = cc.id
-        JOIN groupe g ON cc.groupe_id = g.id
-        WHERE cc.id = ?
-        """
-
-        params = [controle_id]
-
-        # Ajouter le filtre par poste si spécifié
-        if poste_id:
-            query += " AND pr.id = ?"
-            params.append(poste_id)
-
-        query += " ORDER BY ri.numero_ug, ri.numero_ca"
-
-        result = session.exec(query, params)
-
-        # Convertir en DataFrame
-        columns = [
-            "id",
-            "numero_ug",
-            "numero_ca",
-            "nature_ug",
-            "point_comptage",
-            "numero_serie_compteur",
-            "date_releve",
-            "date_valeur",
-            "type_releve",
-            "observations",
-            "index",
-            "evolution_index",
-            "ancien_index",
-            "nouvel_index",
-            "consommation",
-            "montant_consommation",
-            "montant_abonnement",
-            "montant_divers",
-            "total_facture",
-            "poste_nom",
-            "annee",
-            "groupe_nom",
-        ]
-
-        df = pd.DataFrame(list(result), columns=columns)
-        return df
-
-
-def prepare_releves_for_display(df: pd.DataFrame, show_all_columns: bool = False) -> pd.DataFrame:
-    """Préparer le DataFrame pour l'affichage"""
-    if df.empty:
-        return df
-
-    # Colonnes essentielles à toujours afficher
-    essential_columns = [
-        "numero_ug",
-        "numero_ca",
-        "poste_nom",
-        "type_releve",
-        "consommation",
-        "total_facture",
-    ]
-
-    if show_all_columns:
-        # Exclure seulement l'ID et les colonnes techniques
-        display_columns = [col for col in df.columns if col not in ["id"]]
-    else:
-        # Afficher seulement les colonnes essentielles qui existent
-        display_columns = [col for col in essential_columns if col in df.columns]
-
-    display_df = df[display_columns].copy()
-
-    # Formatage des colonnes numériques
-    for col in display_df.columns:
-        if col in [
-            "consommation",
-            "total_facture",
-            "montant_consommation",
-            "montant_abonnement",
-            "montant_divers",
-        ]:
-            if col in display_df.columns:
-                display_df[col] = pd.to_numeric(display_df[col], errors="coerce")
-
-    return display_df
-
-
-def apply_releves_styling(df: pd.DataFrame) -> pd.DataFrame:
-    """Appliquer un styling conditionnel pour mettre en évidence les anomalies"""
-    # Pour l'instant, retourner le DataFrame tel quel
-    # On peut ajouter des règles de styling plus tard
-    return df
+        st.download_button(
+            label="Télécharger en CSV",
+            data=csv,
+            file_name=f"releves_individuels_{selected_controle.annee}_{selected_controle.groupe.nom}_{selected_poste_label}.csv",
+            mime="text/csv",
+        )
 
 
 if __name__ == "__main__":
-    show_releves_individuels_page()
+    show()

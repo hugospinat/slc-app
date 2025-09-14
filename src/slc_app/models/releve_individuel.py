@@ -22,8 +22,8 @@ class ReleveIndividuel(SQLModel, table=True):
     date_valeur: Optional[datetime] = None
     type_releve: Optional[str] = None
     observations: Optional[str] = None
-    index_releve: Optional[float] = None
-    evolution_index: Optional[float] = None
+    index_releve: int = None
+    evolution_index: Optional[int] = None
 
     # Relations
     poste_releve: "PosteReleve" = Relationship(back_populates="releves_individuels")

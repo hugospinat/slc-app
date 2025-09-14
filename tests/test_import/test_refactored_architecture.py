@@ -14,6 +14,8 @@ from slc_app.models.facture import Facture
 from slc_app.models.poste import Poste
 from slc_app.models.tantieme import Tantieme
 from slc_app.models.base_repartition import BaseRepartition
+from slc_app.models.poste_releve import PosteReleve
+from slc_app.models.releve_individuel import ReleveIndividuel
 from slc_app.services.importer.ph.ph_importer import importer_ph
 
 
@@ -104,7 +106,47 @@ def test_architecture_complete():
     finally:
         # Nettoyage
         with Session(engine) as session:
-            # Supprimer le groupe et ses dépendances
+            # Supprimer récursivement tous les objets dépendants
+            controles = session.exec(
+                select(ControleCharges).where(ControleCharges.groupe_id == groupe_id)
+            ).all()
+            for controle in controles:
+                # Supprimer les bases de répartition et leurs tantièmes
+                bases_rep = session.exec(
+                    select(BaseRepartition).where(BaseRepartition.controle_id == controle.id)
+                ).all()
+                for base in bases_rep:
+                    tantiemes = session.exec(
+                        select(Tantieme).where(Tantieme.base_repartition_id == base.id)
+                    ).all()
+                    for tantieme in tantiemes:
+                        session.delete(tantieme)
+                    session.delete(base)
+                # Supprimer les postes et leurs factures
+                postes = session.exec(select(Poste).where(Poste.controle_id == controle.id)).all()
+                for poste in postes:
+                    factures = session.exec(
+                        select(Facture).where(Facture.poste_id == poste.id)
+                    ).all()
+                    for facture in factures:
+                        session.delete(facture)
+                    session.delete(poste)
+                # Supprimer les postes de relevé et leurs relevés individuels
+                postes_releve = session.exec(
+                    select(PosteReleve).where(PosteReleve.controle_id == controle.id)
+                ).all()
+                for poste_releve in postes_releve:
+                    releves = session.exec(
+                        select(ReleveIndividuel).where(
+                            ReleveIndividuel.poste_releve_id == poste_releve.id
+                        )
+                    ).all()
+                    for releve in releves:
+                        session.delete(releve)
+                    session.delete(poste_releve)
+                session.delete(controle)
+            session.commit()
+            # Supprimer le groupe
             groupe = session.get(Groupe, groupe_id)
             if groupe:
                 session.delete(groupe)
@@ -129,7 +171,7 @@ def test_utility_functions_isolation():
 
     try:
         # Test create_controle_charges
-        controle = create_controle_charges(2025, groupe_id)
+        controle, _ = create_controle_charges(2025, groupe_id)
         assert controle.annee == 2025
         assert controle.groupe_id == groupe_id
 

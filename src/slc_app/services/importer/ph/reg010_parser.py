@@ -15,9 +15,6 @@ def process_reg010(pdf_path: str) -> Tuple[List[Facture], List[Poste]]:
     """Traiter un fichier REG010 et retourner les objets sans controle_id"""
     logger.info(f"🔄 Traitement de {os.path.basename(pdf_path)}")
 
-    # Extraction des données
-    parser = TableauParser.from_pdf(pdf_path, min_columns=7)
-
     # Définir les colonnes du REG010
     colonnes_reg010 = [
         REG010.POSTE_ID,
@@ -30,34 +27,39 @@ def process_reg010(pdf_path: str) -> Tuple[List[Facture], List[Poste]]:
     ]
 
     try:
-        # Configuration et nettoyage des données REG010
+        # Extraction des données
         factures_parser = (
-            parser.definir_colonnes(colonnes_reg010)
+            TableauParser.from_pdf(pdf_path, min_columns=7)
+            .definir_colonnes(colonnes_reg010)
             .filtre_regex(REG010.MONTANT_COMPTABLE, r"^-?\d+\.\d{1,2}$")
             .max_nb_cols(8)
-            .col_to_float(REG010.MONTANT_COMPTABLE)
-            .forward_fill(REG010.POSTE_ID)
         )
-
         # Extraction et traitement des postes
         postes = (
-            parser.copy_tableau(REG010.POSTE_ID)
+            factures_parser.copy_tableau(REG010.POSTE_ID)
             .apply_regex(
                 REG010.POSTE_ID,
-                r"^([A-Z][A-Z0-9]*)  - (.*)$",
-                [REG010_POSTE.NOM, REG010_POSTE.CODE],
+                r"^([A-Z][A-Z0-9]{1,4}) - (.*)$",
+                [REG010_POSTE.CODE, REG010_POSTE.NOM],
                 drop_source=True,
             )
-            .supprimer_doublons([REG010_POSTE.NOM])
-            .dropna()
+            .dropna([REG010_POSTE.CODE])
+            .supprimer_doublons([REG010_POSTE.CODE])
             .to_objects(Poste)
+        )
+
+        # Configuration et nettoyage des données REG010
+        factures_parser = (
+            factures_parser.col_to_float(REG010.MONTANT_COMPTABLE)
+            .apply_regex(REG010.POSTE_ID, r"^([A-Z][A-Z0-9]{1,4}) - .*$")
+            .forward_fill(REG010.POSTE_ID)
         )
 
         # Créer les objets factures groupés par nom de poste (génial !)
         factures_par_poste = factures_parser.to_objects_with_field(Facture, REG010.POSTE_ID)
 
-        # Créer un mapping nom -> objet Poste pour les relations
-        poste_map = {poste.nom: poste for poste in postes}
+        # Créer un mapping code -> objet Poste pour les relations
+        poste_map = {poste.code: poste for poste in postes}
 
         # Mapper les relations directement avec la fonction générique
         factures = TableauParser.map_relations_static(factures_par_poste, poste_map, "poste")
